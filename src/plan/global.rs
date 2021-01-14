@@ -5,7 +5,6 @@ use crate::plan::transitive_closure::TransitiveClosure;
 use crate::policy::immortalspace::ImmortalSpace;
 use crate::policy::largeobjectspace::LargeObjectSpace;
 use crate::policy::space::Space;
-#[cfg(feature = "sanity")]
 use crate::scheduler::gc_works::*;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
@@ -17,7 +16,6 @@ use crate::util::heap::layout::map::Map;
 use crate::util::heap::HeapMeta;
 use crate::util::heap::VMRequest;
 use crate::util::options::{Options, UnsafeOptionsWrapper};
-#[cfg(feature = "sanity")]
 use crate::util::sanity::sanity_checker::*;
 use crate::util::statistics::stats::Stats;
 use crate::util::OpaquePointer;
@@ -115,9 +113,7 @@ pub trait Plan: Sized + 'static + Sync + Send {
     ) -> Self;
     fn base(&self) -> &BasePlan<Self::VM>;
     fn schedule_collection(&'static self, _scheduler: &MMTkScheduler<Self::VM>);
-    #[cfg(feature = "sanity")]
     fn schedule_sanity_collection(&'static self, scheduler: &MMTkScheduler<Self::VM>) {
-        self.base().inside_sanity.store(true, Ordering::SeqCst);
         // Stop & scan mutators (mutator scanning can happen before STW)
         for mutator in <Self::VM as VMBinding>::VMActivePlan::mutators() {
             scheduler
@@ -162,19 +158,16 @@ pub trait Plan: Sized + 'static + Sync + Send {
         false
     }
 
-    #[cfg(feature = "sanity")]
     fn enter_sanity(&self) {
-        self.base().inside_sanity.store(true, Ordering::Relaxed)
+        self.base().byte_trigger_sanity.store(true, Ordering::Relaxed)
     }
 
-    #[cfg(feature = "sanity")]
     fn leave_sanity(&self) {
-        self.base().inside_sanity.store(false, Ordering::Relaxed)
+        self.base().byte_trigger_sanity.store(false, Ordering::Relaxed)
     }
 
-    #[cfg(feature = "sanity")]
-    fn is_in_sanity(&self) -> bool {
-        self.base().inside_sanity.load(Ordering::Relaxed)
+    fn is_byte_trigger_sanity(&self) -> bool {
+        self.base().byte_trigger_sanity.load(Ordering::Relaxed)
     }
 
     fn is_initialized(&self) -> bool {
@@ -349,8 +342,7 @@ pub struct BasePlan<VM: VMBinding> {
     pub heap: HeapMeta,
     #[cfg(feature = "base_spaces")]
     pub unsync: UnsafeCell<BaseUnsync<VM>>,
-    #[cfg(feature = "sanity")]
-    pub inside_sanity: AtomicBool,
+    pub byte_trigger_sanity: AtomicBool,
     // A counter for per-mutator stack scanning
     pub scanned_stacks: AtomicUsize,
     pub mutator_iterator_lock: Mutex<()>,
@@ -440,8 +432,7 @@ impl<VM: VMBinding> BasePlan<VM> {
             heap,
             vm_map,
             options,
-            #[cfg(feature = "sanity")]
-            inside_sanity: AtomicBool::new(false),
+            byte_trigger_sanity: AtomicBool::new(false),
             scanned_stacks: AtomicUsize::new(0),
             mutator_iterator_lock: Mutex::new(()),
             allocation_bytes: AtomicUsize::new(0),

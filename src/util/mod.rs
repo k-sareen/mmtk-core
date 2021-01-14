@@ -19,7 +19,6 @@ pub mod opaque_pointer;
 pub mod options;
 pub mod raw_memory_freelist;
 pub mod reference_processor;
-#[cfg(feature = "sanity")]
 pub mod sanity;
 pub mod statistics;
 mod synchronized_counter;

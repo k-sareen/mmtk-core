@@ -45,7 +45,6 @@ impl<VM: VMBinding> SFT for LockFreeImmortalSpace<VM> {
     fn is_movable(&self) -> bool {
         unimplemented!()
     }
-    #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool {
         unimplemented!()
     }

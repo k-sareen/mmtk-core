@@ -11,7 +11,7 @@ use crate::plan::selected_plan::SelectedPlan;
 use crate::policy::space::Space;
 use crate::util::conversions::bytes_to_pages;
 use crate::util::OpaquePointer;
-use crate::vm::{ActivePlan, VMBinding};
+use crate::vm::{ActivePlan, Collection, VMBinding};
 
 const BYTES_IN_PAGE: usize = 1 << 12;
 const BLOCK_SIZE: usize = 8 * BYTES_IN_PAGE;
@@ -78,7 +78,9 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
         // TODO: internalLimit etc.
         let base = &self.plan.base();
 
-        if base.options.stress_factor == DEFAULT_STRESS_FACTOR {
+        if base.options.stress_factor == DEFAULT_STRESS_FACTOR &&
+            base.options.sanity_factor == DEFAULT_STRESS_FACTOR
+        {
             self.acquire_block(size, align, offset, false)
         } else {
             self.alloc_slow_once_stress_test(size, align, offset)
@@ -125,8 +127,26 @@ impl<VM: VMBinding> BumpAllocator<VM> {
             let is_mutator =
                 unsafe { VM::VMActivePlan::is_mutator(self.tls) } && self.plan.is_initialized();
 
+            // if sanity is set, then don't return acquire_block, instead
+            // perform a sanity analysis and then bump allocate as normal.
+            // TODO: kunals figure out a way to handle stress and sanity.
+            // Either make them mutually exclusive, or have different counters.
             if is_mutator
-                && (base.allocation_bytes.load(Ordering::SeqCst) > base.options.stress_factor)
+                && base.allocation_bytes.load(Ordering::SeqCst) > base.options.sanity_factor
+            {
+                trace!(
+                    "Sanity analysis: allocation_bytes = {} more than sanity_factor = {}",
+                    base.allocation_bytes.load(Ordering::Relaxed),
+                    base.options.sanity_factor
+                );
+
+                self.plan.enter_sanity();
+                base.control_collector_context.request();
+                VM::VMCollection::block_for_gc(self.tls);
+                base.allocation_bytes.store(0, Ordering::SeqCst);
+                self.plan.leave_sanity();
+            } else if is_mutator
+                && base.allocation_bytes.load(Ordering::SeqCst) > base.options.stress_factor
             {
                 trace!(
                     "Stress GC: allocation_bytes = {} more than stress_factor = {}",

@@ -461,7 +461,6 @@ impl ObjectReference {
         Address(self.0).is_mapped()
     }
 
-    #[cfg(feature = "sanity")]
     pub fn is_sane(self) -> bool {
         SFT_MAP.get(Address(self.0)).is_sane()
     }

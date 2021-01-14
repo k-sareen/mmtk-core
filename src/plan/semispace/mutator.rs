@@ -1,4 +1,5 @@
 use super::SemiSpace;
+use crate::plan::global::Plan;
 use crate::plan::barriers::NoBarrier;
 use crate::plan::mutator_context::Mutator;
 use crate::plan::mutator_context::MutatorConfig;
@@ -29,7 +30,9 @@ pub fn ss_mutator_release<VM: VMBinding>(
     }
     .downcast_mut::<BumpAllocator<VM>>()
     .unwrap();
-    bump_allocator.rebind(Some(mutator.plan.tospace()));
+    if !mutator.plan.is_byte_trigger_sanity() {
+        bump_allocator.rebind(Some(mutator.plan.tospace()));
+    }
 }
 
 lazy_static! {

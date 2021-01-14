@@ -51,7 +51,6 @@ pub trait SFT {
     fn name(&self) -> &str;
     fn is_live(&self, object: ObjectReference) -> bool;
     fn is_movable(&self) -> bool;
-    #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool;
     fn initialize_header(&self, object: ObjectReference, alloc: bool);
 }
@@ -75,7 +74,6 @@ impl SFT for EmptySpaceSFT {
             object
         )
     }
-    #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool {
         false
     }

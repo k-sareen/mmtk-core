@@ -34,7 +34,6 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
     fn is_movable(&self) -> bool {
         true
     }
-    #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool {
         !self.from_space()
     }

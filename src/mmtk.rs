@@ -7,14 +7,12 @@ use crate::util::heap::layout::heap_layout::VMMap;
 use crate::util::heap::layout::map::Map;
 use crate::util::options::{Options, UnsafeOptionsWrapper};
 use crate::util::reference_processor::ReferenceProcessors;
-#[cfg(feature = "sanity")]
 use crate::util::sanity::sanity_checker::SanityChecker;
 use crate::util::OpaquePointer;
 use crate::vm::VMBinding;
 use std::default::Default;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-#[cfg(feature = "sanity")]
 use std::sync::Mutex;
 
 lazy_static! {
@@ -40,7 +38,6 @@ pub struct MMTK<VM: VMBinding> {
     pub reference_processors: ReferenceProcessors,
     pub options: Arc<UnsafeOptionsWrapper>,
     pub scheduler: Arc<Scheduler<Self>>,
-    #[cfg(feature = "sanity")]
     pub sanity_checker: Mutex<SanityChecker>,
     inside_harness: AtomicBool,
 }
@@ -63,7 +60,6 @@ impl<VM: VMBinding> MMTK<VM> {
             reference_processors: ReferenceProcessors::new(),
             options,
             scheduler,
-            #[cfg(feature = "sanity")]
             sanity_checker: Mutex::new(SanityChecker::new()),
             inside_harness: AtomicBool::new(false),
         }

@@ -122,7 +122,8 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     fn alloc_slow_inline(&mut self, size: usize, align: usize, offset: isize) -> Address {
         let tls = self.get_tls();
         let plan = self.get_plan().base();
-        let stress_test = plan.options.stress_factor != DEFAULT_STRESS_FACTOR;
+        let stress_or_sanity = (plan.options.stress_factor != DEFAULT_STRESS_FACTOR) ||
+            plan.options.sanity_factor != DEFAULT_STRESS_FACTOR;
 
         // Information about the previous collection.
         let mut emergency_collection = false;
@@ -158,7 +159,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                 // (i) by the original alloc_slow_inline(); and (ii) by the alloc_slow_inline()
                 // called by acquire(). In order to not double count the allocation, we only
                 // update allocation bytes if the previous result wasn't 0x0.
-                if stress_test && self.get_plan().is_initialized() && !previous_result_zero {
+                if stress_or_sanity && self.get_plan().is_initialized() && !previous_result_zero {
                     plan.increase_allocation_bytes_by(size);
                 }
 

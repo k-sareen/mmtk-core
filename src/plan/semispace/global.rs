@@ -19,7 +19,6 @@ use crate::util::heap::layout::vm_layout_constants::{HEAP_END, HEAP_START};
 use crate::util::heap::HeapMeta;
 use crate::util::heap::VMRequest;
 use crate::util::options::UnsafeOptionsWrapper;
-#[cfg(feature = "sanity")]
 use crate::util::sanity::sanity_checker::*;
 use crate::util::OpaquePointer;
 use crate::vm::VMBinding;
@@ -97,13 +96,21 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         scheduler
             .unconstrained_works
             .add(StopMutators::<SSProcessEdges<VM>>::new());
+
+        if self.is_byte_trigger_sanity() {
+            scheduler.unconstrained_works.add(ScheduleSanityGC);
+            scheduler.set_finalizer(Some(EndOfGC));
+            return;
+        }
+
         // Prepare global/collectors/mutators
         scheduler.prepare_stage.add(Prepare::new(self));
         // Release global/collectors/mutators
         scheduler.release_stage.add(Release::new(self));
         // Resume mutators
-        #[cfg(feature = "sanity")]
-        scheduler.final_stage.add(ScheduleSanityGC);
+        if self.base().options.sanity_after_gc {
+            scheduler.final_stage.add(ScheduleSanityGC);
+        }
         scheduler.set_finalizer(Some(EndOfGC));
     }
 
