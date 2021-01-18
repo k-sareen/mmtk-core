@@ -115,10 +115,16 @@ pub trait Plan: Sized + 'static + Sync + Send {
     fn schedule_collection(&'static self, _scheduler: &MMTkScheduler<Self::VM>);
     fn schedule_sanity_collection(&'static self, scheduler: &MMTkScheduler<Self::VM>) {
         // Stop & scan mutators (mutator scanning can happen before STW)
-        for mutator in <Self::VM as VMBinding>::VMActivePlan::mutators() {
+        if <Self::VM as VMBinding>::VMScanning::SINGLE_THREAD_MUTATOR_SCANNING {
             scheduler
                 .prepare_stage
-                .add(ScanStackRoot::<SanityGCProcessEdges<Self::VM>>(mutator));
+                .add(ScanStackRoots::<SanityGCProcessEdges<Self::VM>>::new());
+        } else {
+            for mutator in <Self::VM as VMBinding>::VMActivePlan::mutators() {
+                scheduler
+                    .prepare_stage
+                    .add(ScanStackRoot::<SanityGCProcessEdges<Self::VM>>(mutator));
+            }
         }
         scheduler
             .prepare_stage
@@ -159,11 +165,15 @@ pub trait Plan: Sized + 'static + Sync + Send {
     }
 
     fn enter_sanity(&self) {
-        self.base().byte_trigger_sanity.store(true, Ordering::Relaxed)
+        self.base()
+            .byte_trigger_sanity
+            .store(true, Ordering::Relaxed)
     }
 
     fn leave_sanity(&self) {
-        self.base().byte_trigger_sanity.store(false, Ordering::Relaxed)
+        self.base()
+            .byte_trigger_sanity
+            .store(false, Ordering::Relaxed)
     }
 
     fn is_byte_trigger_sanity(&self) -> bool {

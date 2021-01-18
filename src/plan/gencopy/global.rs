@@ -130,7 +130,7 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
                 .add(StopMutators::<GenCopyMatureProcessEdges<VM>>::new());
         }
 
-        if self.base().is_byte_trigger_sanity() {
+        if self.is_byte_trigger_sanity() {
             scheduler.unconstrained_works.add(ScheduleSanityGC);
             scheduler.set_finalizer(Some(EndOfGC));
             return;

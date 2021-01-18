@@ -78,8 +78,8 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
         // TODO: internalLimit etc.
         let base = &self.plan.base();
 
-        if base.options.stress_factor == DEFAULT_STRESS_FACTOR &&
-            base.options.sanity_factor == DEFAULT_STRESS_FACTOR
+        if base.options.stress_factor == DEFAULT_STRESS_FACTOR
+            && base.options.sanity_factor == DEFAULT_STRESS_FACTOR
         {
             self.acquire_block(size, align, offset, false)
         } else {

@@ -1,6 +1,6 @@
 use super::SemiSpace;
-use crate::plan::global::Plan;
 use crate::plan::barriers::NoBarrier;
+use crate::plan::global::Plan;
 use crate::plan::mutator_context::Mutator;
 use crate::plan::mutator_context::MutatorConfig;
 use crate::plan::AllocationSemantics as AllocationType;
