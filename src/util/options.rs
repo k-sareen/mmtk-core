@@ -99,7 +99,7 @@ options! {
     verbose:               usize                [always_valid] = 0,
     stress_factor:         usize                [always_valid] = DEFAULT_STRESS_FACTOR,
     sanity_factor:         usize                [always_valid] = DEFAULT_STRESS_FACTOR,
-    sanity_after_gc:       bool                 [always_valid] = false,
+    sanity_every_gc:       bool                 [always_valid] = false,
     // vmspace
     // FIXME: These options are set for JikesRVM. We need a proper way to set options.
     //   We need to set these values programmatically in VM specific code.

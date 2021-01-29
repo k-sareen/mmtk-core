@@ -64,6 +64,8 @@ pub fn align_allocation<VM: VMBinding>(
 #[inline(always)]
 pub fn fill_alignment_gap<VM: VMBinding>(immut_start: Address, end: Address) {
     let mut start = immut_start;
+    debug_assert!(!start.is_zero(), "the start address cannot be 0x0!");
+    debug_assert!(!end.is_zero(), "the end address cannot be 0x0!");
 
     if VM::MAX_ALIGNMENT - VM::MIN_ALIGNMENT == BYTES_IN_INT {
         // At most a single hole

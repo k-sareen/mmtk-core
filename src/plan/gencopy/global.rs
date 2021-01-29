@@ -140,10 +140,10 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
         scheduler.prepare_stage.add(Prepare::new(self));
         // Release global/collectors/mutators
         scheduler.release_stage.add(Release::new(self));
-        // Resume mutators
-        if self.base().options.sanity_after_gc {
+        if self.base().options.sanity_every_gc {
             scheduler.final_stage.add(ScheduleSanityGC);
         }
+        // Resume mutators
         scheduler.set_finalizer(Some(EndOfGC));
     }
 

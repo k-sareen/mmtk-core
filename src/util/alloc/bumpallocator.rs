@@ -129,8 +129,6 @@ impl<VM: VMBinding> BumpAllocator<VM> {
 
             // if sanity is set, then don't return acquire_block, instead
             // perform a sanity analysis and then bump allocate as normal.
-            // TODO: kunals figure out a way to handle stress and sanity.
-            // Either make them mutually exclusive, or have different counters.
             if is_mutator
                 && base.allocation_bytes.load(Ordering::SeqCst) > base.options.sanity_factor
             {
@@ -154,6 +152,16 @@ impl<VM: VMBinding> BumpAllocator<VM> {
                     base.options.stress_factor
                 );
                 return self.acquire_block(size, align, offset, true);
+            }
+
+            if self.cursor.is_zero() {
+                info!("self.cursor = {}, result = {}, align = {}, offset = {}, size = {}",
+                      self.cursor,
+                      result,
+                      align,
+                      offset,
+                      size
+                );
             }
 
             fill_alignment_gap::<VM>(self.cursor, result);

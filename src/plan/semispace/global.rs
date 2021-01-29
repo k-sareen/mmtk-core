@@ -92,6 +92,7 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
     fn schedule_collection(&'static self, scheduler: &MMTkScheduler<VM>) {
         self.base().set_collection_kind();
         self.base().set_gc_status(GcStatus::GcPrepare);
+
         // Stop & scan mutators (mutator scanning can happen before STW)
         scheduler
             .unconstrained_works
@@ -107,10 +108,10 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         scheduler.prepare_stage.add(Prepare::new(self));
         // Release global/collectors/mutators
         scheduler.release_stage.add(Release::new(self));
-        // Resume mutators
-        if self.base().options.sanity_after_gc {
+        if self.base().options.sanity_every_gc {
             scheduler.final_stage.add(ScheduleSanityGC);
         }
+        // Resume mutators
         scheduler.set_finalizer(Some(EndOfGC));
     }
 

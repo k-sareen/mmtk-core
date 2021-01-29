@@ -11,6 +11,9 @@ use std::ops::{Deref, DerefMut};
 #[allow(dead_code)]
 pub struct SanityChecker {
     refs: HashSet<ObjectReference>,
+    ref_count: usize,
+    null_ref_count: usize,
+    live_object_count: usize,
 }
 
 impl Default for SanityChecker {
@@ -23,6 +26,9 @@ impl SanityChecker {
     pub fn new() -> Self {
         Self {
             refs: HashSet::new(),
+            ref_count: 0,
+            null_ref_count: 0,
+            live_object_count: 0,
         }
     }
 }
@@ -54,6 +60,9 @@ impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.refs.clear();
+            sanity_checker.ref_count = 0;
+            sanity_checker.null_ref_count = 0;
+            sanity_checker.live_object_count = 0;
         }
         for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
             mmtk.scheduler
@@ -62,6 +71,29 @@ impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
         }
         for w in &mmtk.scheduler.worker_group().workers {
             w.local_works.add(PrepareCollector::default());
+        }
+    }
+}
+
+pub struct SanityCheck<P: Plan> {
+    pub plan: &'static P,
+}
+
+unsafe impl<P: Plan> Sync for SanityCheck<P> {}
+
+impl<P: Plan> SanityCheck<P> {
+    pub fn new(plan: &'static P) -> Self {
+        Self { plan }
+    }
+}
+
+impl<P: Plan> GCWork<P::VM> for SanityCheck<P> {
+    fn do_work(&mut self, _worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
+        let sanity_checker = mmtk.sanity_checker.lock().unwrap();
+        for object in &sanity_checker.refs {
+            if !object.is_sane() {
+                error!("Invalid reference: object {:?}", object);
+            }
         }
     }
 }
@@ -80,6 +112,15 @@ impl<P: Plan> SanityRelease<P> {
 
 impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
     fn do_work(&mut self, _worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
+        {
+            let sanity_checker = mmtk.sanity_checker.lock().unwrap();
+            info!(
+                "sanity_checker: live_object_count = {}, ref_count = {}, null_ref_count = {}",
+                sanity_checker.live_object_count,
+                sanity_checker.ref_count,
+                sanity_checker.null_ref_count
+            );
+        }
         for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
             mmtk.scheduler
                 .release_stage
@@ -122,15 +163,18 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
 
     #[inline]
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
+        let mut sanity_checker = self.mmtk().sanity_checker.lock().unwrap();
+        sanity_checker.ref_count += 1;
         if object.is_null() {
+            sanity_checker.null_ref_count += 1;
             return object;
         }
-        let mut sanity_checker = self.mmtk().sanity_checker.lock().unwrap();
         if !sanity_checker.refs.contains(&object) {
             // FIXME steveb consider VM-specific integrity check on reference.
-            if !object.is_sane() {
-                panic!("Invalid reference {:?}", object);
-            }
+            // if !object.is_sane() {
+            //     panic!("Invalid reference {:?}", object);
+            // }
+            sanity_checker.live_object_count += 1;
             // Object is not "marked"
             sanity_checker.refs.insert(object); // "Mark" it
             ProcessEdgesWork::process_node(self, object);

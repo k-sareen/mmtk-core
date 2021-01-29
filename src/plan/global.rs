@@ -115,22 +115,24 @@ pub trait Plan: Sized + 'static + Sync + Send {
     fn schedule_collection(&'static self, _scheduler: &MMTkScheduler<Self::VM>);
     fn schedule_sanity_collection(&'static self, scheduler: &MMTkScheduler<Self::VM>) {
         // Stop & scan mutators (mutator scanning can happen before STW)
-        if <Self::VM as VMBinding>::VMScanning::SINGLE_THREAD_MUTATOR_SCANNING {
-            scheduler
-                .prepare_stage
-                .add(ScanStackRoots::<SanityGCProcessEdges<Self::VM>>::new());
-        } else {
-            for mutator in <Self::VM as VMBinding>::VMActivePlan::mutators() {
-                scheduler
-                    .prepare_stage
-                    .add(ScanStackRoot::<SanityGCProcessEdges<Self::VM>>(mutator));
-            }
-        }
+        // if <Self::VM as VMBinding>::VMScanning::SINGLE_THREAD_MUTATOR_SCANNING {
+        //     scheduler
+        //         .prepare_stage
+        //         .add(ScanStackRoots::<SanityGCProcessEdges<Self::VM>>::new());
+        // } else {
+        //     for mutator in <Self::VM as VMBinding>::VMActivePlan::mutators() {
+        //         scheduler
+        //             .prepare_stage
+        //             .add(ScanStackRoot::<SanityGCProcessEdges<Self::VM>>(mutator));
+        //     }
+        // }
         scheduler
             .prepare_stage
             .add(ScanVMSpecificRoots::<SanityGCProcessEdges<Self::VM>>::new());
         // Prepare global/collectors/mutators
         scheduler.prepare_stage.add(SanityPrepare::new(self));
+        // Check sanity of table generated
+        scheduler.unconstrained_works.add(SanityCheck::new(self));
         // Release global/collectors/mutators
         scheduler.release_stage.add(SanityRelease::new(self));
     }
