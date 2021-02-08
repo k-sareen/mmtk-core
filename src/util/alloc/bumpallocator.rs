@@ -9,9 +9,11 @@ use crate::util::alloc::Allocator;
 use crate::plan::global::Plan;
 use crate::plan::selected_plan::SelectedPlan;
 use crate::policy::space::Space;
+use crate::util::analysis::obj_size::ObjSizeArgs;
+use crate::util::analysis::RtAnalysis;
 use crate::util::conversions::bytes_to_pages;
 use crate::util::OpaquePointer;
-use crate::vm::{ActivePlan, Collection, VMBinding};
+use crate::vm::{ActivePlan, VMBinding}; // Collection, VMBinding};
 
 const BYTES_IN_PAGE: usize = 1 << 12;
 const BLOCK_SIZE: usize = 8 * BYTES_IN_PAGE;
@@ -138,11 +140,17 @@ impl<VM: VMBinding> BumpAllocator<VM> {
                     base.options.sanity_factor
                 );
 
-                self.plan.enter_sanity();
-                base.control_collector_context.request();
-                VM::VMCollection::block_for_gc(self.tls);
-                base.allocation_bytes.store(0, Ordering::SeqCst);
-                self.plan.leave_sanity();
+                {
+                    let mut obj_size = base.obj_size.lock().unwrap();
+                    obj_size.alloc_hook(ObjSizeArgs::new(&base.stats, size));
+                    // let mut obj_num = base.obj_num.lock().unwrap();
+                    // obj_num.alloc_hook(());
+                }
+                // self.plan.enter_sanity();
+                // base.control_collector_context.request();
+                // VM::VMCollection::block_for_gc(self.tls);
+                // base.allocation_bytes.store(0, Ordering::SeqCst);
+                // self.plan.leave_sanity();
             } else if is_mutator
                 && base.allocation_bytes.load(Ordering::SeqCst) > base.options.stress_factor
             {

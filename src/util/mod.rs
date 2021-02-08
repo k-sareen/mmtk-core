@@ -20,6 +20,7 @@ pub mod options;
 pub mod raw_memory_freelist;
 pub mod reference_processor;
 pub mod sanity;
+pub mod analysis;
 pub mod statistics;
 mod synchronized_counter;
 pub mod treadmill;

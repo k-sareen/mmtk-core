@@ -8,6 +8,8 @@ use crate::policy::space::Space;
 use crate::scheduler::gc_works::*;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
+// use crate::util::analysis::obj_num::ObjNum;
+use crate::util::analysis::obj_size::ObjSize;
 use crate::util::constants::*;
 use crate::util::conversions::bytes_to_pages;
 use crate::util::heap::layout::heap_layout::Mmapper;
@@ -360,6 +362,8 @@ pub struct BasePlan<VM: VMBinding> {
     pub mutator_iterator_lock: Mutex<()>,
     // A counter that keeps tracks of the number of bytes allocated since last stress test
     pub allocation_bytes: AtomicUsize,
+    // pub obj_num: Mutex<ObjNum>,
+    pub obj_size: Mutex<ObjSize>,
 }
 
 #[cfg(feature = "base_spaces")]
@@ -448,6 +452,8 @@ impl<VM: VMBinding> BasePlan<VM> {
             scanned_stacks: AtomicUsize::new(0),
             mutator_iterator_lock: Mutex::new(()),
             allocation_bytes: AtomicUsize::new(0),
+            // obj_num: Mutex::new(ObjNum::new(ctr)),
+            obj_size: Mutex::new(ObjSize::new()),
         }
     }
 

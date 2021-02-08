@@ -89,11 +89,17 @@ impl<P: Plan> SanityCheck<P> {
 
 impl<P: Plan> GCWork<P::VM> for SanityCheck<P> {
     fn do_work(&mut self, _worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
+        let mut err_found = false;
         let sanity_checker = mmtk.sanity_checker.lock().unwrap();
         for object in &sanity_checker.refs {
             if !object.is_sane() {
+                err_found = true;
                 error!("Invalid reference: object {:?}", object);
             }
+        }
+
+        if err_found {
+            panic!("Invalid references found!");
         }
     }
 }
