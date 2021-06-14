@@ -163,6 +163,8 @@ impl<VM: VMBinding> MallocSpace<VM> {
             active_bytes: AtomicUsize::new(0),
             chunk_addr_min: AtomicUsize::new(usize::max_value()), // XXX: have to use AtomicUsize to represent an Address
             chunk_addr_max: AtomicUsize::new(0),
+            // Not all metadata is tracked here -- the metadata for which chunks are active
+            // is a separate SideMetadata instance as it is mapped eagerly (`CHUNK_METADATA` in mallocspace/metadata.rs)
             metadata: SideMetadata::new(SideMetadataContext {
                 global: global_side_metadata_specs,
                 local: vec![ALLOC_METADATA_SPEC, MARKING_METADATA_SPEC, ACTIVE_PAGE_METADATA_SPEC],

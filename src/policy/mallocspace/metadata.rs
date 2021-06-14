@@ -24,6 +24,8 @@ use std::sync::RwLock;
 
 static FIRST_CHUNK: AtomicBool = AtomicBool::new(true);
 
+// This is a separate SideMetadata instance as it is mapped eagerly instead of
+// lazily as with the other metadatas (such as alloc bit etc.)
 lazy_static! {
     static ref CHUNK_METADATA: SideMetadata = SideMetadata::new(SideMetadataContext {
         global: vec![ACTIVE_CHUNK_METADATA_SPEC],
