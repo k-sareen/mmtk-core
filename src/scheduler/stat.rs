@@ -3,6 +3,13 @@ use super::work_counter::{WorkCounter, WorkCounterBase, WorkDuration};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "perf")]
+use std::sync::RwLock;
+
+#[cfg(feature = "perf")]
+lazy_static! {
+    pub static ref PERF_EVENTS: RwLock<Vec<(String, i32, i32)>> = RwLock::new(vec![]);
+}
 
 /// Merge and print the work-packet level statistics from all worker threads
 #[derive(Default)]
@@ -83,6 +90,19 @@ impl SchedulerStat {
             }
         }
         // Print out overall execution time
+        stat.insert(
+            "total-work.time.total".to_owned(),
+            format!("{:.2}", duration_overall.total),
+        );
+        stat.insert(
+            "total-work.time.min".to_owned(),
+            format!("{:.2}", duration_overall.min),
+        );
+        stat.insert(
+            "total-work.time.max".to_owned(),
+            format!("{:.2}", duration_overall.max),
+        );
+
         stat.insert(
             "total-work.time.total".to_owned(),
             format!("{:.2}", duration_overall.total),
@@ -201,7 +221,16 @@ impl WorkerLocalStat {
     }
 
     // The set of work counters for all work packet types
+    #[allow(unused_mut)]
     fn counter_set() -> Vec<Box<dyn WorkCounter>> {
-        vec![Box::new(WorkDuration::new())]
+        let mut counters: Vec<Box<dyn WorkCounter>> = vec![Box::new(WorkDuration::new())];
+        #[cfg(feature = "perf")]
+        {
+            use super::work_counter::WorkPerfEvent;
+            for e in &*PERF_EVENTS.read().unwrap() {
+                counters.push(box WorkPerfEvent::new(&e.0, e.1, e.2));
+            }
+        }
+        counters
     }
 }

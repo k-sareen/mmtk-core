@@ -2,6 +2,9 @@ use crate::mmtk::MMTK;
 use crate::util::statistics::counter::*;
 use crate::util::statistics::Timer;
 use crate::vm::VMBinding;
+
+#[cfg(feature = "perf")]
+use pfm::Perfmon;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -37,6 +40,8 @@ impl SharedStats {
 pub struct Stats {
     gc_count: AtomicUsize,
     total_time: Arc<Mutex<Timer>>,
+    #[cfg(feature = "perf")]
+    perfmon: Perfmon,
 
     pub shared: Arc<SharedStats>,
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
@@ -55,9 +60,18 @@ impl Stats {
             true,
             false,
         )));
+        // The following lines are NOT put into a conditionally compiled block
+        // Otherwise, the perfmon variable will not be accessible to the outer
+        // scope
+        #[cfg(feature = "perf")]
+        let mut perfmon: Perfmon = Default::default();
+        #[cfg(feature = "perf")]
+        perfmon.initialize().expect("Perfmon failed to initialize");
         Stats {
             gc_count: AtomicUsize::new(0),
             total_time: t.clone(),
+            #[cfg(feature = "perf")]
+            perfmon,
 
             shared,
             counters: Mutex::new(vec![t]),
