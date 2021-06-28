@@ -146,7 +146,8 @@ impl<VM: VMBinding> Space<VM> for MallocSpace<VM> {
 
     fn reserved_pages(&self) -> usize {
         let data_pages = conversions::bytes_to_pages_up(self.active_bytes.load(Ordering::SeqCst));
-        let meta_pages = self.metadata.calculate_reserved_pages(data_pages);
+        let meta_pages = self.metadata.calculate_reserved_pages(data_pages)
+            + CHUNK_METADATA.calculate_reserved_pages(data_pages);
         data_pages + meta_pages
     }
 

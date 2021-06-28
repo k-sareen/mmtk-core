@@ -136,9 +136,9 @@ fn map_chunk_mark_space(chunk_start: Address) {
 }
 
 pub fn map_chunk_meta_space(metadata: &SideMetadata, chunk_start: Address) {
-    if FIRST_CHUNK.load(Ordering::Acquire) {
+    if FIRST_CHUNK.load(Ordering::SeqCst) {
         map_chunk_mark_space(chunk_start);
-        FIRST_CHUNK.store(false, Ordering::Release);
+        FIRST_CHUNK.store(false, Ordering::SeqCst);
     }
 
     if is_chunk_marked(chunk_start) {
