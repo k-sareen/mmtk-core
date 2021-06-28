@@ -8,12 +8,12 @@ use crate::util::heap::layout::heap_layout::VMMap;
 use crate::util::heap::PageResource;
 use crate::util::malloc::*;
 use crate::util::opaque_pointer::*;
+use crate::util::side_metadata::bzero_metadata;
 use crate::util::side_metadata::SideMetadataSanity;
 use crate::util::side_metadata::{SideMetadata, SideMetadataContext, SideMetadataSpec};
 use crate::util::Address;
 use crate::util::ObjectReference;
 use crate::vm::VMBinding;
-// use crate::util::side_metadata::bzero_metadata;
 use crate::vm::{ActivePlan, Collection, ObjectModel};
 use crate::{policy::space::Space, util::heap::layout::vm_layout_constants::BYTES_IN_CHUNK};
 use std::sync::atomic::AtomicUsize;
@@ -215,9 +215,8 @@ impl<VM: VMBinding> MallocSpace<VM> {
         address
     }
 
-    pub fn free(&self, addr: Address) {
+    pub fn free(&self, addr: Address, bytes: usize) {
         let ptr = addr.to_mut_ptr();
-        let bytes = unsafe { malloc_usable_size(ptr) };
         trace!("Free memory {:?}", ptr);
         unsafe {
             free(ptr);
@@ -248,7 +247,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
             address,
         );
 
-        if !is_marked(object) {
+        if unsafe { !is_marked_unsafe(object) } {
             set_mark_bit(object);
             // set_page_mark_bit(page_addr);
             set_chunk_mark_bit(chunk_start);
@@ -352,12 +351,11 @@ impl<VM: VMBinding> MallocSpace<VM> {
                     );
 
                     // Free object
-                    self.free(obj_start);
+                    self.free(obj_start, bytes);
                     trace!("free object {}", object);
                     unset_alloc_bit_unsafe(object);
                 } else {
-                    // Live object. Unset mark bit
-                    unset_mark_bit_unsafe(object);
+                    // Live object.
                     // This chunk is still active.
                     chunk_is_empty = false;
                     page_is_empty = false; // XXX: page-bit diff
@@ -379,6 +377,8 @@ impl<VM: VMBinding> MallocSpace<VM> {
                 address += VM::MIN_ALIGNMENT;
             }
         }
+
+        bzero_metadata(MARKING_METADATA_SPEC, chunk_start, BYTES_IN_CHUNK);
 
         if chunk_is_empty {
             unset_chunk_mark_bit_unsafe(chunk_start);
