@@ -25,7 +25,7 @@ use std::sync::RwLock;
 static FIRST_CHUNK: AtomicBool = AtomicBool::new(true);
 
 lazy_static! {
-    static ref CHUNK_METADATA: SideMetadata = SideMetadata::new(SideMetadataContext {
+    pub(super) static ref CHUNK_METADATA: SideMetadata = SideMetadata::new(SideMetadataContext {
         global: vec![ACTIVE_CHUNK_METADATA_SPEC],
         local: vec![],
     });
