@@ -45,7 +45,7 @@ lazy_static! {
 pub(super) const ACTIVE_CHUNK_METADATA_SPEC: SideMetadataSpec = SideMetadataSpec {
     scope: SideMetadataScope::Global,
     offset: GLOBAL_SIDE_METADATA_BASE_ADDRESS.as_usize(),
-    log_num_of_bits: 0,
+    log_num_of_bits: 3,
     log_min_obj_size: LOG_BYTES_IN_CHUNK as usize,
 };
 
@@ -85,7 +85,7 @@ pub(super) const ACTIVE_PAGE_METADATA_SPEC: SideMetadataSpec = SideMetadataSpec 
 pub(super) const ACTIVE_CHUNK_METADATA_SPEC: SideMetadataSpec = SideMetadataSpec {
     scope: SideMetadataScope::Global,
     offset: GLOBAL_SIDE_METADATA_BASE_ADDRESS.as_usize(),
-    log_num_of_bits: 0,
+    log_num_of_bits: 3,
     log_min_obj_size: LOG_BYTES_IN_CHUNK as usize,
 };
 
