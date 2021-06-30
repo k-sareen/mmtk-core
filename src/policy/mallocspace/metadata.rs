@@ -115,7 +115,8 @@ pub(super) const ACTIVE_PAGE_METADATA_SPEC: SideMetadataSpec = SideMetadataSpec 
 
 pub fn is_meta_space_mapped(address: Address) -> bool {
     let chunk_start = conversions::chunk_align_down(address);
-    is_chunk_marked(chunk_start)
+    // if first chunk has not been mapped, then no chunk is marked
+    !FIRST_CHUNK.load(Ordering::Relaxed) && is_chunk_marked(chunk_start)
 }
 
 fn map_chunk_mark_space(chunk_start: Address) {
@@ -136,10 +137,16 @@ fn map_chunk_mark_space(chunk_start: Address) {
 }
 
 pub fn map_chunk_meta_space(metadata: &SideMetadata, chunk_start: Address) {
-    // XXX: is there a race condition here?
+    // XXX: is there a better way to do this?
     if FIRST_CHUNK.load(Ordering::SeqCst) {
-        map_chunk_mark_space(chunk_start);
-        FIRST_CHUNK.store(false, Ordering::SeqCst);
+        if FIRST_CHUNK.compare_exchange(
+            true,
+            false, 
+            Ordering::SeqCst,
+            Ordering::Relaxed
+        ) == Ok(true) {
+            map_chunk_mark_space(chunk_start);
+        }
     }
 
     if is_chunk_marked(chunk_start) {
@@ -232,10 +239,6 @@ pub unsafe fn is_page_marked_unsafe(page_addr: Address) -> bool {
 
 #[allow(unused)]
 pub fn is_chunk_marked(chunk_start: Address) -> bool {
-    if FIRST_CHUNK.load(Ordering::Relaxed) {
-        return false; // if first chunk has not been mapped, then no chunk is marked
-    }
-
     load_atomic(ACTIVE_CHUNK_METADATA_SPEC, chunk_start) == 1
 }
 
