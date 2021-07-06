@@ -43,15 +43,15 @@ impl<VM: VMBinding> Allocator<VM> for MallocAllocator<VM> {
             let is_mutator = VM::VMActivePlan::is_mutator(self.tls) && self.plan.is_initialized();
 
             if is_mutator
-                && base.allocation_bytes.load(Ordering::SeqCst) > base.options.analysis_factor
+                && base.analysis_alloc_bytes.load(Ordering::SeqCst) > base.options.analysis_factor
             {
                 trace!(
                     "Analysis: allocation_bytes = {} more than analysis_factor = {}",
-                    base.allocation_bytes.load(Ordering::Relaxed),
+                    base.analysis_alloc_bytes.load(Ordering::Relaxed),
                     base.options.analysis_factor
                 );
 
-                base.allocation_bytes.store(0, Ordering::SeqCst);
+                base.analysis_alloc_bytes.store(0, Ordering::SeqCst);
                 base.analysis_manager.alloc_hook(size, align, offset);
             }
         }

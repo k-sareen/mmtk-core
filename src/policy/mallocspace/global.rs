@@ -35,6 +35,7 @@ const ASSERT_ALLOCATION: bool = false;
 pub struct MallocSpace<VM: VMBinding> {
     phantom: PhantomData<VM>,
     active_bytes: AtomicUsize,
+    pub active_pages: AtomicUsize,
     pub chunk_addr_min: AtomicUsize, // XXX: have to use AtomicUsize to represent an Address
     pub chunk_addr_max: AtomicUsize,
     metadata: SideMetadataContext,
@@ -74,7 +75,7 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
     fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         trace!("initialize_object_metadata for object {}", object);
         let page_addr = conversions::page_align_down(object.to_address());
-        set_page_mark(page_addr);
+        self.set_page_mark(page_addr);
         set_alloc_bit(object);
     }
 }
@@ -167,6 +168,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
         MallocSpace {
             phantom: PhantomData,
             active_bytes: AtomicUsize::new(0),
+            active_pages: AtomicUsize::new(0),
             chunk_addr_min: AtomicUsize::new(usize::max_value()), // XXX: have to use AtomicUsize to represent an Address
             chunk_addr_max: AtomicUsize::new(0),
             metadata: SideMetadataContext {
@@ -186,6 +188,14 @@ impl<VM: VMBinding> MallocSpace<VM> {
             #[cfg(debug_assertions)]
             work_live_bytes: AtomicUsize::new(0),
         }
+    }
+
+    fn set_page_mark(&self, page_addr: Address) {
+        if !is_page_marked(page_addr) {
+            self.active_pages.fetch_add(1, Ordering::SeqCst);
+        }
+
+        set_page_mark(page_addr);
     }
 
     pub fn alloc(&self, tls: VMThread, size: usize) -> Address {
@@ -356,6 +366,10 @@ impl<VM: VMBinding> MallocSpace<VM> {
             // wherein the performance of the hot loop decreased if more work was done in the loop.
             if address - page >= BYTES_IN_PAGE {
                 if page_is_empty {
+                    if unsafe { is_page_marked_unsafe(page) } {
+                        self.active_pages.fetch_sub(1, Ordering::SeqCst);
+                    }
+
                     unsafe { unset_page_mark_unsafe(page) };
                 }
                 page = conversions::page_align_down(address);
@@ -529,6 +543,10 @@ impl<VM: VMBinding> MallocSpace<VM> {
 
             if address - page >= BYTES_IN_PAGE {
                 if page_is_empty {
+                    if unsafe { is_page_marked_unsafe(page) } {
+                        self.active_pages.fetch_sub(1, Ordering::SeqCst);
+                    }
+
                     unsafe { unset_page_mark_unsafe(page) };
                 }
                 page = conversions::page_align_down(address);

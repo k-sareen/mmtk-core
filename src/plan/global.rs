@@ -368,6 +368,7 @@ pub struct BasePlan<VM: VMBinding> {
     pub mutator_iterator_lock: Mutex<()>,
     // A counter that keeps tracks of the number of bytes allocated since last stress test
     pub allocation_bytes: AtomicUsize,
+    pub analysis_alloc_bytes: AtomicUsize,
     // Wrapper around analysis counters
     #[cfg(feature = "analysis")]
     pub analysis_manager: AnalysisManager<VM>,
@@ -492,6 +493,7 @@ impl<VM: VMBinding> BasePlan<VM> {
             scanned_stacks: AtomicUsize::new(0),
             mutator_iterator_lock: Mutex::new(()),
             allocation_bytes: AtomicUsize::new(0),
+            analysis_alloc_bytes: AtomicUsize::new(0),
             #[cfg(feature = "analysis")]
             analysis_manager,
         }
@@ -677,6 +679,7 @@ impl<VM: VMBinding> BasePlan<VM> {
 
     pub fn increase_allocation_bytes_by(&self, size: usize) {
         let old_allocation_bytes = self.allocation_bytes.fetch_add(size, Ordering::SeqCst);
+        let _old_analysis_alloc_bytes = self.analysis_alloc_bytes.fetch_add(size, Ordering::SeqCst);
         trace!(
             "Stress GC: old_allocation_bytes = {}, size = {}, allocation_bytes = {}",
             old_allocation_bytes,

@@ -41,7 +41,7 @@ mod transitive_closure;
 pub use transitive_closure::TransitiveClosure;
 
 mod gencopy;
-mod marksweep;
+pub mod marksweep;
 mod nogc;
 mod pageprotect;
 mod semispace;
