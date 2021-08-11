@@ -152,7 +152,7 @@ impl<VM: VMBinding> Space<VM> for MallocSpace<VM> {
 
     fn reserved_pages(&self) -> usize {
         // TODO: figure out a better way to get the total number of active pages from the metadata
-        let data_pages = conversions::bytes_to_pages_up(self.active_bytes.load(Ordering::SeqCst));
+        let data_pages = self.active_pages.load(Ordering::Relaxed);
         let meta_pages = self.metadata.calculate_reserved_pages(data_pages);
         data_pages + meta_pages
     }
