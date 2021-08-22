@@ -104,6 +104,13 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
     }
 
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let start_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_nanos();
+
         let is_full_heap = self.request_full_heap_collection();
         self.gc_full_heap.store(is_full_heap, Ordering::SeqCst);
 
@@ -142,7 +149,7 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
         #[cfg(feature = "sanity")]
         scheduler.work_buckets[WorkBucketStage::Final]
             .add(ScheduleSanityGC::<Self, GenCopyCopyContext<VM>>::new(self));
-        scheduler.set_finalizer(Some(EndOfGC));
+        scheduler.set_finalizer(Some(EndOfGC(start_ns)));
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {

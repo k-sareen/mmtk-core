@@ -59,6 +59,13 @@ impl<VM: VMBinding> Plan for MarkSweep<VM> {
     }
 
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let start_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_nanos();
+
         self.base().set_collection_kind();
         self.base().set_gc_status(GcStatus::GcPrepare);
         // Stop & scan mutators (mutator scanning can happen before STW)
@@ -79,7 +86,7 @@ impl<VM: VMBinding> Plan for MarkSweep<VM> {
         #[cfg(feature = "sanity")]
         scheduler.work_buckets[WorkBucketStage::Final]
             .add(ScheduleSanityGC::<Self, NoCopy<VM>>::new(self));
-        scheduler.set_finalizer(Some(EndOfGC));
+        scheduler.set_finalizer(Some(EndOfGC(start_ns)));
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {

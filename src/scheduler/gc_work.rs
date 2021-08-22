@@ -232,10 +232,18 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for StopMutators<E> {
 impl<E: ProcessEdgesWork> CoordinatorWork<E::VM> for StopMutators<E> {}
 
 #[derive(Default)]
-pub struct EndOfGC;
+pub struct EndOfGC(pub u128);
 
 impl<VM: VMBinding> GCWork<VM> for EndOfGC {
     fn do_work(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let end_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_nanos();
+
+        mmtk.plan.base().write_gc_time(self.0, end_ns);
         info!("End of GC");
 
         #[cfg(feature = "extreme_assertions")]

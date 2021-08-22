@@ -30,6 +30,7 @@ use crate::vm::*;
 use downcast_rs::Downcast;
 use enum_map::EnumMap;
 use std::marker::PhantomData;
+use std::fs::File;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -376,6 +377,8 @@ pub struct BasePlan<VM: VMBinding> {
     // Wrapper around analysis counters
     #[cfg(feature = "analysis")]
     pub analysis_manager: AnalysisManager<VM>,
+    pub gclog: Mutex<File>,
+    pub gcnum: AtomicUsize,
 
     // Spaces in base plan
     #[cfg(feature = "code_space")]
@@ -433,6 +436,22 @@ impl<VM: VMBinding> BasePlan<VM> {
         // Initializing the analysis manager and routines
         #[cfg(feature = "analysis")]
         let analysis_manager = AnalysisManager::new(&stats);
+
+        use std::fs::OpenOptions;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let start_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_millis();
+        let file_name = format!("gclog-{}", start_ms);
+
+        let mut gclog = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_name)
+            .unwrap();
+
         BasePlan {
             #[cfg(feature = "code_space")]
             code_space: ImmortalSpace::new(
@@ -499,6 +518,8 @@ impl<VM: VMBinding> BasePlan<VM> {
             allocation_bytes: AtomicUsize::new(0),
             #[cfg(feature = "analysis")]
             analysis_manager,
+            gclog: Mutex::new(gclog),
+            gcnum: AtomicUsize::new(0),
         }
     }
 
@@ -740,6 +761,16 @@ impl<VM: VMBinding> BasePlan<VM> {
         #[cfg(feature = "vm_space")]
         self.vm_space
             .verify_side_metadata_sanity(side_metadata_sanity_checker);
+    }
+
+    pub fn write_gc_time(&self, start: u128, end: u128) {
+        use std::io::Write;
+
+        let mut gclog = self.gclog.lock().unwrap();
+        if let Err(e) = writeln!(*gclog, "{},{},{}", self.gcnum.load(Ordering::Relaxed), start, end - start) {
+            eprintln!("WARNING: Couldn't write to file: {}", e);
+        }
+        self.gcnum.fetch_add(1, Ordering::Relaxed);
     }
 }
 
