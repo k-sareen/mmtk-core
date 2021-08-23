@@ -444,7 +444,7 @@ impl<VM: VMBinding> BasePlan<VM> {
             .duration_since(UNIX_EPOCH)
             .expect("Time before UNIX_EPOCH")
             .as_millis();
-        let file_name = format!("gclog-{}", start_ms);
+        let file_name = format!("/home/kunals/git/evaluation/gclog-{}", start_ms);
 
         let mut gclog = OpenOptions::new()
             .create(true)
