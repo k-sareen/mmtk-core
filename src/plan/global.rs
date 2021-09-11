@@ -449,8 +449,9 @@ impl<VM: VMBinding> BasePlan<VM> {
         let mut gclog = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(file_name)
+            .open(file_name.clone())
             .unwrap();
+        println!("Create file: {}", file_name);
 
         BasePlan {
             #[cfg(feature = "code_space")]
