@@ -64,7 +64,7 @@ impl BlockState {
 
 /// Data structure to reference an immix block.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Block(Address);
 
 impl Block {
@@ -180,9 +180,6 @@ impl Block {
     /// Mark the block for defragmentation.
     #[inline(always)]
     pub fn set_as_defrag_source(&self, defrag: bool) {
-        if cfg!(debug_assertions) && defrag {
-            debug_assert!(!self.get_state().is_reusable());
-        }
         let byte = if defrag { Self::DEFRAG_SOURCE_STATE } else { 0 };
         side_metadata::store_atomic(
             &Self::DEFRAG_STATE_TABLE,
