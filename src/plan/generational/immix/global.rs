@@ -98,6 +98,13 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
     #[allow(clippy::if_same_then_else)]
     #[allow(clippy::branches_sharing_code)]
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<Self::VM>) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let start_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_nanos();
+
         let is_full_heap = self.request_full_heap_collection();
 
         self.base().set_collection_kind();
@@ -177,7 +184,7 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
             scheduler.work_buckets[WorkBucketStage::Final]
                 .add(ScheduleSanityGC::<Self, GenImmixCopyContext<VM>>::new(self));
         }
-        scheduler.set_finalizer(Some(EndOfGC));
+        scheduler.set_finalizer(Some(EndOfGC(start_ns)));
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
