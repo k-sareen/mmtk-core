@@ -1,41 +1,36 @@
-use super::global::SemiSpace;
+use super::global::GenCopy;
 use crate::plan::CopyContext;
 use crate::plan::PlanConstraints;
 use crate::policy::space::Space;
 use crate::scheduler::gc_work::*;
 use crate::scheduler::GCWorkerLocal;
 use crate::util::alloc::{Allocator, BumpAllocator};
-use crate::util::object_forwarding;
 use crate::util::opaque_pointer::*;
 use crate::util::{Address, ObjectReference};
-use crate::vm::VMBinding;
+use crate::vm::*;
 use crate::MMTK;
 use std::ops::{Deref, DerefMut};
 
-pub struct SSCopyContext<VM: VMBinding> {
-    plan: &'static SemiSpace<VM>,
+pub struct GenCopyCopyContext<VM: VMBinding> {
+    plan: &'static GenCopy<VM>,
     ss: BumpAllocator<VM>,
 }
 
-impl<VM: VMBinding> CopyContext for SSCopyContext<VM> {
+impl<VM: VMBinding> CopyContext for GenCopyCopyContext<VM> {
     type VM = VM;
 
     fn constraints(&self) -> &'static PlanConstraints {
-        &super::global::SS_CONSTRAINTS
+        &super::global::GENCOPY_CONSTRAINTS
     }
-
     fn init(&mut self, tls: VMWorkerThread) {
         self.ss.tls = tls.0;
     }
-
     fn prepare(&mut self) {
         self.ss.rebind(self.plan.tospace());
     }
-
     fn release(&mut self) {
         // self.ss.rebind(Some(self.plan.tospace()));
     }
-
     #[inline(always)]
     fn alloc_copy(
         &mut self,
@@ -45,24 +40,24 @@ impl<VM: VMBinding> CopyContext for SSCopyContext<VM> {
         offset: isize,
         _semantics: crate::AllocationSemantics,
     ) -> Address {
+        debug_assert!(VM::VMActivePlan::global().base().gc_in_progress_proper());
         self.ss.alloc(bytes, align, offset)
     }
-
     #[inline(always)]
     fn post_copy(
         &mut self,
         obj: ObjectReference,
-        _tib: Address,
-        _bytes: usize,
-        _semantics: crate::AllocationSemantics,
+        tib: Address,
+        bytes: usize,
+        semantics: crate::AllocationSemantics,
     ) {
-        object_forwarding::clear_forwarding_bits::<VM>(obj);
+        crate::plan::generational::generational_post_copy::<VM>(obj, tib, bytes, semantics)
     }
 }
 
-impl<VM: VMBinding> SSCopyContext<VM> {
+impl<VM: VMBinding> GenCopyCopyContext<VM> {
     pub fn new(mmtk: &'static MMTK<VM>) -> Self {
-        let plan = &mmtk.plan.downcast_ref::<SemiSpace<VM>>().unwrap();
+        let plan = &mmtk.plan.downcast_ref::<GenCopy<VM>>().unwrap();
         Self {
             plan,
             // it doesn't matter which space we bind with the copy allocator. We will rebind to a proper space in prepare().
@@ -71,70 +66,66 @@ impl<VM: VMBinding> SSCopyContext<VM> {
     }
 }
 
-impl<VM: VMBinding> GCWorkerLocal for SSCopyContext<VM> {
+impl<VM: VMBinding> GCWorkerLocal for GenCopyCopyContext<VM> {
     fn init(&mut self, tls: VMWorkerThread) {
         CopyContext::init(self, tls);
     }
 }
 
-pub struct SSProcessEdges<VM: VMBinding> {
-    // Use a static ref to the specific plan to avoid overhead from dynamic dispatch or
-    // downcast for each traced object.
-    plan: &'static SemiSpace<VM>,
-    base: ProcessEdgesBase<SSProcessEdges<VM>>,
+pub struct GenCopyMatureProcessEdges<VM: VMBinding> {
+    plan: &'static GenCopy<VM>,
+    base: ProcessEdgesBase<GenCopyMatureProcessEdges<VM>>,
 }
 
-impl<VM: VMBinding> SSProcessEdges<VM> {
-    fn ss(&self) -> &'static SemiSpace<VM> {
+impl<VM: VMBinding> GenCopyMatureProcessEdges<VM> {
+    fn gencopy(&self) -> &'static GenCopy<VM> {
         self.plan
     }
 }
 
-impl<VM: VMBinding> ProcessEdgesWork for SSProcessEdges<VM> {
+impl<VM: VMBinding> ProcessEdgesWork for GenCopyMatureProcessEdges<VM> {
     type VM = VM;
-
     fn new(edges: Vec<Address>, roots: bool, mmtk: &'static MMTK<VM>) -> Self {
         let base = ProcessEdgesBase::new(edges, roots, mmtk);
-        let plan = base.plan().downcast_ref::<SemiSpace<VM>>().unwrap();
+        let plan = base.plan().downcast_ref::<GenCopy<VM>>().unwrap();
         Self { plan, base }
     }
-
     #[inline]
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
         if object.is_null() {
             return object;
         }
-
-        // We don't need to trace the object if it is already in the to-space
-        if self.ss().tospace().in_space(object) {
-            object
-        } else if self.ss().fromspace().in_space(object) {
-            self.ss()
+        // Evacuate mature objects; don't trace objects if they are in to-space
+        if self.gencopy().tospace().in_space(object) {
+            return object;
+        } else if self.gencopy().fromspace().in_space(object) {
+            return self
+                .gencopy()
                 .fromspace()
-                .trace_object::<Self, SSCopyContext<VM>>(
+                .trace_object::<Self, GenCopyCopyContext<VM>>(
                     self,
                     object,
                     super::global::ALLOC_SS,
-                    unsafe { self.worker().local::<SSCopyContext<VM>>() },
-                )
-        } else {
-            self.ss()
-                .common
-                .trace_object::<Self, SSCopyContext<VM>>(self, object)
+                    unsafe { self.worker().local::<GenCopyCopyContext<VM>>() },
+                );
         }
+
+        self.gencopy()
+            .gen
+            .trace_object_full_heap::<Self, GenCopyCopyContext<VM>>(self, object, unsafe {
+                self.worker().local::<GenCopyCopyContext<VM>>()
+            })
     }
 }
 
-impl<VM: VMBinding> Deref for SSProcessEdges<VM> {
+impl<VM: VMBinding> Deref for GenCopyMatureProcessEdges<VM> {
     type Target = ProcessEdgesBase<Self>;
-    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.base
     }
 }
 
-impl<VM: VMBinding> DerefMut for SSProcessEdges<VM> {
-    #[inline]
+impl<VM: VMBinding> DerefMut for GenCopyMatureProcessEdges<VM> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
     }

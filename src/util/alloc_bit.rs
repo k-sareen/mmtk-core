@@ -15,19 +15,23 @@ use crate::util::ObjectReference;
 ///
 #[cfg(target_pointer_width = "32")]
 pub(crate) const ALLOC_SIDE_METADATA_SPEC: SideMetadataSpec = SideMetadataSpec {
+    name: "AllocBit",
     is_global: true,
     offset: GLOBAL_SIDE_METADATA_BASE_OFFSET,
     log_num_of_bits: 0,
-    log_min_obj_size: constants::LOG_MIN_OBJECT_SIZE as usize,
+    log_bytes_in_region: constants::LOG_MIN_OBJECT_SIZE as usize,
 };
 
 #[cfg(target_pointer_width = "64")]
 pub(crate) const ALLOC_SIDE_METADATA_SPEC: SideMetadataSpec = SideMetadataSpec {
+    name: "AllocBit",
     is_global: true,
     offset: GLOBAL_SIDE_METADATA_BASE_OFFSET,
     log_num_of_bits: 0,
-    log_min_obj_size: constants::LOG_MIN_OBJECT_SIZE as usize,
+    log_bytes_in_region: constants::LOG_MIN_OBJECT_SIZE as usize,
 };
+
+pub const ALLOC_SIDE_METADATA_ADDR: Address = ALLOC_SIDE_METADATA_SPEC.get_absolute_offset();
 
 pub fn map_meta_space_for_chunk(metadata: &SideMetadataContext, chunk_start: Address) {
     let mmap_metadata_result = metadata.try_map_metadata_space(chunk_start, BYTES_IN_CHUNK);
