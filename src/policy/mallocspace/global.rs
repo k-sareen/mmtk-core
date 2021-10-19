@@ -72,10 +72,10 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
         true
     }
 
-    fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
+    fn initialize_object_metadata(&self, object: ObjectReference, bytes: usize, _alloc: bool) {
         trace!("initialize_object_metadata for object {}", object);
         let page_addr = conversions::page_align_down(object.to_address());
-        self.set_page_mark(page_addr);
+        self.set_page_mark(page_addr, bytes);
         set_alloc_bit(object);
     }
 }
@@ -190,12 +190,24 @@ impl<VM: VMBinding> MallocSpace<VM> {
         }
     }
 
-    fn set_page_mark(&self, page_addr: Address) {
-        if !is_page_marked(page_addr) {
-            self.active_pages.fetch_add(1, Ordering::SeqCst);
+    fn set_page_mark(&self, page_addr: Address, size: usize) {
+        let mut page = page_addr;
+        while page < page_addr + size {
+            if !is_page_marked(page) {
+                self.active_pages.fetch_add(1, Ordering::SeqCst);
+            }
+
+            set_page_mark(page);
+            page = page + BYTES_IN_PAGE;
+        }
+    }
+
+    fn unset_page_mark(&self, page_addr: Address) {
+        if unsafe { is_page_marked_unsafe(page_addr) } {
+            self.active_pages.fetch_sub(1, Ordering::SeqCst);
         }
 
-        set_page_mark(page_addr);
+        unsafe { unset_page_mark_unsafe(page_addr) };
     }
 
     pub fn alloc(&self, tls: VMThread, size: usize) -> Address {
@@ -268,9 +280,11 @@ impl<VM: VMBinding> MallocSpace<VM> {
         );
 
         if !is_marked::<VM>(object, None) {
+            // let page_addr = conversions::page_align_down(address);
             let chunk_start = conversions::chunk_align_down(address);
             set_mark_bit::<VM>(object, Some(Ordering::SeqCst));
             set_chunk_mark(chunk_start);
+            // self.set_page_mark(page_addr);
             trace.process_node(object);
         }
 
@@ -533,25 +547,24 @@ impl<VM: VMBinding> MallocSpace<VM> {
         let mut chunk_is_empty = true;
         let mut address = chunk_start;
         let chunk_end = chunk_start + BYTES_IN_CHUNK;
-        let mut page = conversions::page_align_down(address);
+        let mut curr_page = conversions::page_align_down(address);
+        let mut old_page = curr_page;
         let mut page_is_empty = true;
-        let mut last_on_page_boundary = false;
 
         // Linear scan through the chunk
         while address < chunk_end {
             trace!("Check address {}", address);
 
-            if address - page >= BYTES_IN_PAGE {
+            curr_page = conversions::page_align_down(address);
+            if old_page != curr_page {
                 if page_is_empty {
-                    if unsafe { is_page_marked_unsafe(page) } {
-                        self.active_pages.fetch_sub(1, Ordering::SeqCst);
+                    while old_page != curr_page {
+                        self.unset_page_mark(old_page);
+                        old_page = old_page + BYTES_IN_PAGE;
                     }
-
-                    unsafe { unset_page_mark_unsafe(page) };
                 }
-                page = conversions::page_align_down(address);
-                page_is_empty = !last_on_page_boundary;
-                last_on_page_boundary = false;
+                old_page = curr_page;
+                page_is_empty = true;
             }
 
             // Check if the address is an object
@@ -589,10 +602,6 @@ impl<VM: VMBinding> MallocSpace<VM> {
                     // This chunk and page are still active.
                     chunk_is_empty = false;
                     page_is_empty = false;
-
-                    if address + bytes - page > BYTES_IN_PAGE {
-                        last_on_page_boundary = true;
-                    }
 
                     #[cfg(debug_assertions)]
                     {

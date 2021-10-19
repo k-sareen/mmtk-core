@@ -38,7 +38,7 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
     fn is_sane(&self) -> bool {
         !self.from_space()
     }
-    fn initialize_object_metadata(&self, _object: ObjectReference, _alloc: bool) {}
+    fn initialize_object_metadata(&self, _object: ObjectReference, _bytes: usize, _alloc: bool) {}
     #[inline(always)]
     fn get_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
         if !self.from_space() {

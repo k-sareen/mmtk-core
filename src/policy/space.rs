@@ -70,7 +70,7 @@ pub trait SFT {
     #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool;
     /// Initialize object metadata (in the header, or in the side metadata).
-    fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool);
+    fn initialize_object_metadata(&self, object: ObjectReference, bytes: usize, alloc: bool);
 }
 
 /// Print debug info for SFT. Should be false when committed.
@@ -107,7 +107,7 @@ impl SFT for EmptySpaceSFT {
         false
     }
 
-    fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
+    fn initialize_object_metadata(&self, object: ObjectReference, _bytes: usize, _alloc: bool) {
         panic!(
             "Called initialize_object_metadata() on {:x}, which maps to an empty space",
             object
