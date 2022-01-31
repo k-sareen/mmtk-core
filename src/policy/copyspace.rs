@@ -265,7 +265,7 @@ impl<VM: VMBinding> CopySpace<VM> {
 }
 
 use crate::plan::Plan;
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 use crate::util::alloc::BumpAllocator;
 use crate::util::opaque_pointer::VMWorkerThread;
 
@@ -288,7 +288,7 @@ impl<VM: VMBinding> PolicyCopyContext for CopySpaceCopyContext<VM> {
         bytes: usize,
         align: usize,
         offset: isize,
-    ) -> Address {
+    ) -> Allocation {
         self.copy_allocator.alloc(bytes, align, offset)
     }
 }

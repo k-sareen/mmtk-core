@@ -1,6 +1,6 @@
 use crate::policy::mallocspace::MallocSpace;
 use crate::policy::space::Space;
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 use crate::util::opaque_pointer::*;
 use crate::util::Address;
 use crate::vm::VMBinding;
@@ -17,10 +17,12 @@ impl<VM: VMBinding> Allocator<VM> for MallocAllocator<VM> {
     fn get_space(&self) -> &'static dyn Space<VM> {
         self.space as &'static dyn Space<VM>
     }
+
     fn get_plan(&self) -> &'static dyn Plan<VM = VM> {
         self.plan
     }
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         self.alloc_slow(size, align, offset)
     }
 
@@ -33,9 +35,6 @@ impl<VM: VMBinding> Allocator<VM> for MallocAllocator<VM> {
     }
 
     fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Address {
-        // TODO: We currently ignore the offset field. This is wrong.
-        // assert!(offset == 0);
-        // assert!(align <= 16);
         assert!(offset >= 0);
 
         let ret = self.space.alloc(self.tls, size, align, offset);

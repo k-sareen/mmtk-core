@@ -3,7 +3,7 @@ use crate::plan::Plan;
 use crate::policy::immix::line::*;
 use crate::policy::immix::ImmixSpace;
 use crate::policy::space::Space;
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 use crate::util::opaque_pointer::VMThread;
 use crate::util::Address;
 use crate::vm::*;
@@ -69,7 +69,7 @@ impl<VM: VMBinding> Allocator<VM> for ImmixAllocator<VM> {
     }
 
     #[inline(always)]
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         debug_assert!(
             size <= crate::policy::immix::MAX_IMMIX_OBJECT_SIZE,
             "Trying to allocate a {} bytes object, which is larger than MAX_IMMIX_OBJECT_SIZE {}",
@@ -103,7 +103,7 @@ impl<VM: VMBinding> Allocator<VM> for ImmixAllocator<VM> {
                 self.cursor,
                 self.limit
             );
-            result
+            Ok(result)
         }
     }
 
@@ -162,7 +162,7 @@ impl<VM: VMBinding> Allocator<VM> for ImmixAllocator<VM> {
             // Try allocate. The allocator will try allocate from thread local buffer, if that fails, it will
             // get a clean block.
             trace!("{:?}: alloc_slow_once_precise_stress - alloc()", self.tls);
-            let ret = self.alloc(size, align, offset);
+            let ret = self.alloc(size, align, offset).expect("MMTk: Failed to allocate");
             // Indicate that we finish the alloc slow for stress test.
             self.alloc_slow_for_stress = false;
             ret
@@ -206,7 +206,7 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
     }
 
     /// Large-object (larger than a line) bump alloaction.
-    fn overflow_alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn overflow_alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("{:?}: overflow_alloc", self.tls);
         let start = align_allocation_no_fill::<VM>(self.large_cursor, align, offset);
         let end = start + size;
@@ -218,13 +218,13 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
         } else {
             fill_alignment_gap::<VM>(self.large_cursor, start);
             self.large_cursor = end;
-            start
+            Ok(start)
         }
     }
 
     /// Bump allocate small objects into recyclable lines (i.e. holes).
     #[cold]
-    fn alloc_slow_hot(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow_hot(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("{:?}: alloc_slow_hot", self.tls);
         if self.acquire_recyclable_lines(size, align, offset) {
             self.alloc(size, align, offset)
@@ -297,7 +297,7 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
                     self.cursor = block.start();
                     self.limit = block.end();
                 }
-                self.alloc(size, align, offset)
+                self.alloc(size, align, offset).expect("MMTk: Unknown failure in allocation")
             }
         }
     }

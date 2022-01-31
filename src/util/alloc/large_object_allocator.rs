@@ -1,7 +1,7 @@
 use crate::plan::Plan;
 use crate::policy::largeobjectspace::LargeObjectSpace;
 use crate::policy::space::Space;
-use crate::util::alloc::{allocator, Allocator};
+use crate::util::alloc::{allocator, Allocation, Allocator};
 use crate::util::opaque_pointer::*;
 use crate::util::Address;
 use crate::vm::VMBinding;
@@ -17,6 +17,7 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
     fn get_tls(&self) -> VMThread {
         self.tls
     }
+
     fn get_plan(&self) -> &'static dyn Plan<VM = VM> {
         self.plan
     }
@@ -30,13 +31,9 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
         false
     }
 
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
-        let cell: Address = self.alloc_slow(size, align, offset);
-        allocator::align_allocation::<VM>(cell, align, offset, VM::MIN_ALIGNMENT, true)
-    }
-
-    fn alloc_slow(&mut self, size: usize, align: usize, offset: isize) -> Address {
-        self.alloc_slow_inline(size, align, offset)
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
+        let cell: Address = self.alloc_slow(size, align, offset)?;
+        Ok(allocator::align_allocation::<VM>(cell, align, offset, VM::MIN_ALIGNMENT, true))
     }
 
     fn alloc_slow_once(&mut self, size: usize, align: usize, _offset: isize) -> Address {

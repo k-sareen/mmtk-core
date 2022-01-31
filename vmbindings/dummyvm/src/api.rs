@@ -5,6 +5,7 @@ use libc::c_char;
 use std::ffi::CStr;
 use mmtk::memory_manager;
 use mmtk::AllocationSemantics;
+use mmtk::util::alloc::Allocation;
 use mmtk::util::{ObjectReference, Address};
 use mmtk::util::opaque_pointer::*;
 use mmtk::scheduler::GCWorker;
@@ -39,7 +40,7 @@ pub extern "C" fn mmtk_destroy_mutator(mutator: *mut Mutator<DummyVM>) {
 
 #[no_mangle]
 pub extern "C" fn mmtk_alloc(mutator: *mut Mutator<DummyVM>, size: usize,
-                    align: usize, offset: isize, mut semantics: AllocationSemantics) -> Address {
+                    align: usize, offset: isize, mut semantics: AllocationSemantics) -> Allocation {
     if size >= SINGLETON.get_plan().constraints().max_non_los_default_alloc_bytes {
         semantics = AllocationSemantics::Los;
     }

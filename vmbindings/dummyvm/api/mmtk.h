@@ -17,6 +17,26 @@ extern "C" {
 
 typedef void* MMTk_Mutator;
 
+typedef enum {
+    MmtkHeapOutOfMemory,
+    MmtkVMOutOfMemory,
+} MmtkAllocationError;
+
+typedef enum {
+    Ok,
+    Err,
+} MmtkAllocationTag;
+
+typedef union {
+    void* addr;
+    MmtkAllocationError err;
+} MmtkAllocationPayload;
+
+typedef struct {
+    MmtkAllocationTag tag;
+    MmtkAllocationPayload payload;
+} MmtkAllocation;
+
 // Initialize an MMTk instance
 extern void mmtk_gc_init(size_t heap_size);
 
@@ -39,14 +59,14 @@ extern void mmtk_enable_collection();
 extern void mmtk_disable_collection();
 
 // Allocate memory for an object
-extern void* mmtk_alloc(MMTk_Mutator mutator,
+extern MmtkAllocation mmtk_alloc(MMTk_Mutator mutator,
                         size_t size,
                         size_t align,
                         ssize_t offset,
                         int allocator);
 
 // Slowpath allocation for an object
-extern void* mmtk_alloc_slow(MMTk_Mutator mutator,
+extern MmtkAllocation mmtk_alloc_slow(MMTk_Mutator mutator,
                              size_t size,
                              size_t align,
                              ssize_t offset,

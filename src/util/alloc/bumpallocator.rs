@@ -1,7 +1,7 @@
 use super::allocator::{align_allocation_no_fill, fill_alignment_gap};
 use crate::util::Address;
 
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 
 use crate::plan::Plan;
 use crate::policy::space::Space;
@@ -43,17 +43,20 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
     fn get_space(&self) -> &'static dyn Space<VM> {
         self.space
     }
+
     fn get_plan(&self) -> &'static dyn Plan<VM = VM> {
         self.plan
     }
+
     fn does_thread_local_allocation(&self) -> bool {
         true
     }
+
     fn get_thread_local_buffer_granularity(&self) -> usize {
         BLOCK_SIZE
     }
 
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("alloc");
         let result = align_allocation_no_fill::<VM>(self.cursor, align, offset);
         let new_cursor = result + size;
@@ -71,7 +74,7 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
                 self.cursor,
                 self.limit
             );
-            result
+            Ok(result)
         }
     }
 
@@ -168,7 +171,7 @@ impl<VM: VMBinding> BumpAllocator<VM> {
                 // cursor > block_size always.
                 self.set_limit(acquired_start, unsafe { Address::from_usize(block_size) });
             }
-            self.alloc(size, align, offset)
+            self.alloc(size, align, offset).expect("MMTk: Error in acquiring more blocks")
         }
     }
 }

@@ -1,7 +1,7 @@
 use super::BumpAllocator;
 use crate::plan::Plan;
 use crate::policy::space::Space;
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 use crate::util::opaque_pointer::*;
 use crate::util::Address;
 use crate::vm::VMBinding;
@@ -48,12 +48,12 @@ impl<VM: VMBinding> Allocator<VM> for MarkCompactAllocator<VM> {
         self.bump_allocator.get_thread_local_buffer_granularity()
     }
 
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         let rtn = self
             .bump_allocator
-            .alloc(size + Self::HEADER_RESERVED_IN_BYTES, align, offset);
+            .alloc(size + Self::HEADER_RESERVED_IN_BYTES, align, offset)?;
         // return the actual object start address
-        rtn + Self::HEADER_RESERVED_IN_BYTES
+        Ok(rtn + Self::HEADER_RESERVED_IN_BYTES)
     }
 
     fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Address {

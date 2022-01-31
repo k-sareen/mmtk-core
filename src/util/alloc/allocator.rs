@@ -9,6 +9,16 @@ use crate::vm::VMBinding;
 use crate::vm::{ActivePlan, Collection};
 use downcast_rs::Downcast;
 
+#[repr(C)]
+#[derive(Debug)]
+pub enum MmtkAllocationError {
+    HeapOutOfMemory,
+    VMOutOfMemory,
+}
+
+#[repr(C)]
+pub type Allocation = Result<Address, MmtkAllocationError>;
+
 #[inline(always)]
 pub fn align_allocation_no_fill<VM: VMBinding>(
     region: Address,
@@ -121,15 +131,15 @@ pub trait Allocator<VM: VMBinding>: Downcast {
         unimplemented!()
     }
 
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address;
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation;
 
     #[inline(never)]
-    fn alloc_slow(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         self.alloc_slow_inline(size, align, offset)
     }
 
     #[inline(always)]
-    fn alloc_slow_inline(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow_inline(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         let tls = self.get_tls();
         let plan = self.get_plan().base();
         let is_mutator = VM::VMActivePlan::is_mutator(tls);
@@ -159,7 +169,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
 
             if !is_mutator {
                 debug_assert!(!result.is_zero());
-                return result;
+                return Ok(result);
             }
 
             if !result.is_zero() {
@@ -203,7 +213,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                     }
                 }
 
-                return result;
+                return Ok(result);
             }
 
             // It is possible to have cases where a thread is blocked for another GC (non emergency)
@@ -217,12 +227,15 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                 trace!("Emergency collection");
                 // Report allocation success to assist OutOfMemory handling.
                 // This seems odd, but we must allow each OOM to run its course (and maybe give us back memory)
-                let fail_with_oom = !plan.allocation_success.swap(true, Ordering::SeqCst);
-                trace!("fail with oom={}", fail_with_oom);
-                if fail_with_oom {
+                // let fail_with_oom = !plan.allocation_success.swap(true, Ordering::SeqCst);
+                // info!("OutOfMemory fail with oom={}", fail_with_oom);
+                // if fail_with_oom {
+                    // VM::VMCollection::out_of_memory(tls, MmtkAllocationError::HeapOutOfMemory);
                     VM::VMCollection::out_of_memory(tls);
-                    trace!("Not reached");
-                }
+                    // info!("Not reached");
+                    plan.allocation_success.swap(false, Ordering::SeqCst);
+                    return Err(MmtkAllocationError::HeapOutOfMemory);
+                // }
             }
 
             /* This is in case a GC occurs, and our mutator context is stale.
@@ -235,18 +248,20 @@ pub trait Allocator<VM: VMBinding>: Downcast {
             //    VMActivePlan::mutator(tls).get_allocator_from_space(space)
             //};
 
-            /*
-             * Record whether last collection was an Emergency collection.
-             * If so, we make one more attempt to allocate before we signal
-             * an OOM.
-             */
+            // Record whether last collection was an Emergency collection. If so, we make one more
+            // attempt to allocate before we signal an OOM.
             emergency_collection = self.get_plan().is_emergency_collection();
             trace!("Got emergency collection as {}", emergency_collection);
             previous_result_zero = true;
         }
     }
 
-    /// Single slow path allocation attempt. This is called by allocSlow.
+    /// Single slowpath allocation attempt. This is called by `alloc_slow`.
+    ///
+    /// Arguments:
+    /// * `size`: the allocation size in bytes.
+    /// * `align`: the required alignment in bytes.
+    /// * `offset` the required offset in bytes.
     fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Address;
 
     /// Single slowpath allocation attempt for stress test. When the stress factor is set (e.g. to N),
@@ -264,8 +279,8 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     /// check (cursor + size < limit) will fail, and jump to this slowpath. In the slowpath, we still allocate from the thread
     /// local buffer, and recompute the limit (remaining buffer size).
     ///
-    /// If an allocator does not do thread local allocation (which returns false for does_thread_local_allocation()), it does
-    /// not need to override this method. The default implementation will simply call allow_slow_once() and it will work fine
+    /// If an allocator does not do thread local allocation (which returns false for `does_thread_local_allocation()`), it does
+    /// not need to override this method. The default implementation will simply call `allow_slow_once()` and it will work fine
     /// for allocators that do not have thread local allocation.
     ///
     /// Arguments:

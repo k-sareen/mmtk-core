@@ -601,7 +601,7 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ScanObjectsAndMarkLines<E> {
 
 use crate::plan::Plan;
 use crate::policy::copy_context::PolicyCopyContext;
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 use crate::util::alloc::ImmixAllocator;
 
 /// Immix copy allocator
@@ -628,7 +628,7 @@ impl<VM: VMBinding> PolicyCopyContext for ImmixCopyContext<VM> {
         bytes: usize,
         align: usize,
         offset: isize,
-    ) -> Address {
+    ) -> Allocation {
         if self.defrag_allocator.immix_space().in_defrag() {
             self.defrag_allocator.alloc(bytes, align, offset)
         } else {

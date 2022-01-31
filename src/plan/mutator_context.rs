@@ -4,6 +4,7 @@ use crate::plan::barriers::{Barrier, WriteTarget};
 use crate::plan::global::Plan;
 use crate::plan::AllocationSemantics;
 use crate::policy::space::Space;
+use crate::util::alloc::Allocation;
 use crate::util::alloc::allocators::{AllocatorSelector, Allocators};
 use crate::util::{Address, ObjectReference};
 use crate::util::{VMMutatorThread, VMWorkerThread};
@@ -68,6 +69,7 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
     fn prepare(&mut self, tls: VMWorkerThread) {
         (*self.config.prepare_func)(self, tls)
     }
+
     fn release(&mut self, tls: VMWorkerThread) {
         (*self.config.release_func)(self, tls)
     }
@@ -79,7 +81,7 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
         align: usize,
         offset: isize,
         allocator: AllocationSemantics,
-    ) -> Address {
+    ) -> Allocation {
         unsafe {
             self.allocators
                 .get_allocator_mut(self.config.allocator_mapping[allocator])
@@ -125,7 +127,7 @@ pub trait MutatorContext<VM: VMBinding>: Send + 'static {
         align: usize,
         offset: isize,
         allocator: AllocationSemantics,
-    ) -> Address;
+    ) -> Allocation;
     fn post_alloc(&mut self, refer: ObjectReference, bytes: usize, allocator: AllocationSemantics);
     fn flush_remembered_sets(&mut self) {
         self.barrier().flush();

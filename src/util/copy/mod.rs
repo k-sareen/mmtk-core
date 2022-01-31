@@ -8,6 +8,7 @@ use crate::policy::copyspace::CopySpaceCopyContext;
 use crate::policy::immix::ImmixCopyContext;
 use crate::policy::immix::ImmixSpace;
 use crate::policy::space::Space;
+use crate::util::alloc::Allocation;
 use crate::util::object_forwarding;
 use crate::util::opaque_pointer::VMWorkerThread;
 use crate::util::{Address, ObjectReference};
@@ -74,7 +75,7 @@ impl<VM: VMBinding> GCWorkerCopyContext<VM> {
         align: usize,
         offset: isize,
         semantics: CopySemantics,
-    ) -> Address {
+    ) -> Allocation {
         #[cfg(debug_assertions)]
         if bytes > self.config.constraints.max_non_los_default_alloc_bytes {
             warn!(
