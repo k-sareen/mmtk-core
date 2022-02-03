@@ -193,16 +193,16 @@ impl<VM: VMBinding> MallocSpace<VM> {
         }
     }
 
-    pub fn alloc(&self, tls: VMThread, size: usize, align: usize, offset: isize) -> Address {
+    pub fn alloc(&self, tls: VMThread, size: usize, align: usize, offset: isize) -> Allocation {
         // TODO: Should refactor this and Space.acquire()
         if VM::VMActivePlan::global().poll(false, self) {
             assert!(VM::VMActivePlan::is_mutator(tls), "Polling in GC worker");
             VM::VMCollection::block_for_gc(VMMutatorThread(tls));
-            return unsafe { Address::zero() };
+            return Err(MmtkAllocationError::SpaceOutOfMemory);
         }
 
-        let (address, is_offset_malloc) = alloc::<VM>(size, align, offset);
-        if !address.is_zero() {
+        let (address_res, is_offset_malloc) = alloc::<VM>(size, align, offset);
+        if let address = Result(address_res) {
             let actual_size = get_malloc_usable_size(address, is_offset_malloc);
 
             // If the side metadata for the address has not yet been mapped, we will map all the side metadata for the range [address, address + actual_size).
@@ -225,7 +225,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
             }
         }
 
-        address
+        address_res
     }
 
     // XXX optimize: We pass the bytes in to free as otherwise there were multiple

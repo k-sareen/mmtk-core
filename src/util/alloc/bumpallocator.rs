@@ -1,7 +1,7 @@
 use super::allocator::{align_allocation_no_fill, fill_alignment_gap};
 use crate::util::Address;
 
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator};
 
 use crate::plan::Plan;
 use crate::policy::space::Space;
@@ -43,19 +43,22 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
     fn get_space(&self) -> &'static dyn Space<VM> {
         self.space
     }
+
     fn get_plan(&self) -> &'static dyn Plan<VM = VM> {
         self.plan
     }
+
     fn does_thread_local_allocation(&self) -> bool {
         true
     }
+
     fn get_thread_local_buffer_granularity(&self) -> usize {
         BLOCK_SIZE
     }
 
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("alloc");
-        let result = align_allocation_no_fill::<VM>(self.cursor, align, offset);
+        let result = align_allocation_no_fill::<VM>(self.cursor, align, offset)?;
         let new_cursor = result + size;
 
         if new_cursor > self.limit {
@@ -71,11 +74,11 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
                 self.cursor,
                 self.limit
             );
-            result
+            Ok(result)
         }
     }
 
-    fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("alloc_slow");
         self.acquire_block(size, align, offset, false)
     }
@@ -91,13 +94,13 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
         align: usize,
         offset: isize,
         need_poll: bool,
-    ) -> Address {
+    ) -> Allocation {
         if need_poll {
             return self.acquire_block(size, align, offset, true);
         }
 
         trace!("alloc_slow stress_test");
-        let result = align_allocation_no_fill::<VM>(self.cursor, align, offset);
+        let result = align_allocation_no_fill::<VM>(self.cursor, align, offset)?;
         let new_cursor = result + size;
 
         // For stress test, limit is [0, block_size) to artificially make the
@@ -116,7 +119,7 @@ impl<VM: VMBinding> Allocator<VM> for BumpAllocator<VM> {
                 self.cursor,
                 self.limit
             );
-            result
+            Ok(result)
         }
     }
 
@@ -147,13 +150,14 @@ impl<VM: VMBinding> BumpAllocator<VM> {
         align: usize,
         offset: isize,
         stress_test: bool,
-    ) -> Address {
+    ) -> Allocation {
         let block_size = (size + BLOCK_MASK) & (!BLOCK_MASK);
         let acquired_start = self.space.acquire(self.tls, bytes_to_pages(block_size));
-        if acquired_start.is_zero() {
+        if acquired_start.is_err() {
             trace!("Failed to acquire a new block");
             acquired_start
         } else {
+            let acquired_start = acquired_start?;
             trace!(
                 "Acquired a new block of size {} with start address {}",
                 block_size,

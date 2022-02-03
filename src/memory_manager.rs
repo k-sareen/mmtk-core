@@ -16,6 +16,7 @@ use crate::plan::AllocationSemantics;
 use crate::plan::{Mutator, MutatorContext};
 use crate::scheduler::WorkBucketStage;
 use crate::scheduler::{GCWork, GCWorker};
+use crate::util::alloc::Allocation;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::constants::{LOG_BYTES_IN_PAGE, MIN_OBJECT_SIZE};
 use crate::util::heap::layout::vm_layout_constants::HEAP_END;
@@ -120,7 +121,7 @@ pub fn alloc<VM: VMBinding>(
     align: usize,
     offset: isize,
     semantics: AllocationSemantics,
-) -> Address {
+) -> Allocation {
     // MMTk has assumptions about minimal object size.
     // We need to make sure that all allocations comply with the min object size.
     // Ideally, we check the allocation size, and if it is smaller, we transparently allocate the min

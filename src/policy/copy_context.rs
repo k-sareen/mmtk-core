@@ -1,3 +1,4 @@
+use crate::util::alloc::Allocation;
 use crate::util::Address;
 use crate::util::ObjectReference;
 use crate::vm::VMBinding;
@@ -21,7 +22,7 @@ pub trait PolicyCopyContext: 'static + Send {
         bytes: usize,
         align: usize,
         offset: isize,
-    ) -> Address;
+    ) -> Allocation;
     #[inline(always)]
     fn post_copy(&mut self, _obj: ObjectReference, _bytes: usize) {}
 }

@@ -3,7 +3,7 @@ use crate::plan::Plan;
 use crate::policy::immix::line::*;
 use crate::policy::immix::ImmixSpace;
 use crate::policy::space::Space;
-use crate::util::alloc::Allocator;
+use crate::util::alloc::{Allocation, Allocator, MmtkAllocationError};
 use crate::util::opaque_pointer::VMThread;
 use crate::util::Address;
 use crate::vm::*;
@@ -69,14 +69,14 @@ impl<VM: VMBinding> Allocator<VM> for ImmixAllocator<VM> {
     }
 
     #[inline(always)]
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         debug_assert!(
             size <= crate::policy::immix::MAX_IMMIX_OBJECT_SIZE,
             "Trying to allocate a {} bytes object, which is larger than MAX_IMMIX_OBJECT_SIZE {}",
             size,
             crate::policy::immix::MAX_IMMIX_OBJECT_SIZE
         );
-        let result = align_allocation_no_fill::<VM>(self.cursor, align, offset);
+        let result = align_allocation_no_fill::<VM>(self.cursor, align, offset)?;
         let new_cursor = result + size;
 
         if new_cursor > self.limit {
@@ -103,12 +103,12 @@ impl<VM: VMBinding> Allocator<VM> for ImmixAllocator<VM> {
                 self.cursor,
                 self.limit
             );
-            result
+            Ok(result)
         }
     }
 
     /// Acquire a clean block from ImmixSpace for allocation.
-    fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("{:?}: alloc_slow_once", self.tls);
         self.acquire_clean_block(size, align, offset)
     }
@@ -123,7 +123,7 @@ impl<VM: VMBinding> Allocator<VM> for ImmixAllocator<VM> {
         align: usize,
         offset: isize,
         need_poll: bool,
-    ) -> Address {
+    ) -> Allocation {
         trace!("{:?}: alloc_slow_once_precise_stress", self.tls);
         // If we are required to make a poll, we call acquire_clean_block() which will acquire memory
         // from the space which includes a GC poll.
@@ -206,9 +206,9 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
     }
 
     /// Large-object (larger than a line) bump alloaction.
-    fn overflow_alloc(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn overflow_alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("{:?}: overflow_alloc", self.tls);
-        let start = align_allocation_no_fill::<VM>(self.large_cursor, align, offset);
+        let start = align_allocation_no_fill::<VM>(self.large_cursor, align, offset)?;
         let end = start + size;
         if end > self.large_limit {
             self.request_for_large = true;
@@ -218,13 +218,13 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
         } else {
             fill_alignment_gap::<VM>(self.large_cursor, start);
             self.large_cursor = end;
-            start
+            Ok(start)
         }
     }
 
     /// Bump allocate small objects into recyclable lines (i.e. holes).
     #[cold]
-    fn alloc_slow_hot(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow_hot(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         trace!("{:?}: alloc_slow_hot", self.tls);
         if self.acquire_recyclable_lines(size, align, offset) {
             self.alloc(size, align, offset)
@@ -252,7 +252,7 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
                 crate::util::alloc_bit::bzero_alloc_bit(self.cursor, self.limit - self.cursor);
                 crate::util::memory::zero(self.cursor, self.limit - self.cursor);
                 debug_assert!(
-                    align_allocation_no_fill::<VM>(self.cursor, align, offset) + size <= self.limit
+                    align_allocation_no_fill::<VM>(self.cursor, align, offset).unwrap() + size <= self.limit
                 );
                 let block = line.block();
                 self.line = if lines.end == block.lines().end {
@@ -285,9 +285,9 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
     }
 
     // Get a clean block from ImmixSpace.
-    fn acquire_clean_block(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn acquire_clean_block(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         match self.immix_space().get_clean_block(self.tls, self.copy) {
-            None => Address::ZERO,
+            None => Err(MmtkAllocationError::SpaceOutOfMemory),
             Some(block) => {
                 trace!("{:?}: Acquired a new block {:?}", self.tls, block);
                 if self.request_for_large {

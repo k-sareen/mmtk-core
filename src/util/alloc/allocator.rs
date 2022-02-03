@@ -15,31 +15,33 @@ use downcast_rs::Downcast;
 pub enum MmtkAllocationError {
     /// The specified heap size is too small for the given program to continue.
     HeapOutOfMemory,
-    /// The OS is unable to mmap or acquire more memory. Critical error. MMTk expects the VM to abort if such an error is thrown.
+    /// The OS is unable to mmap or acquire more memory. Critical error. MMTk expects the VM to
+    /// abort if such an error is thrown.
     MmapOutOfMemory,
+    /// Space is out of memory or MMTk has requested a GC. Only used internally.
+    SpaceOutOfMemory,
 }
+
+pub type Allocation = Result<Address, MmtkAllocation>;
 
 #[inline(always)]
 pub fn align_allocation_no_fill<VM: VMBinding>(
-    region: Address,
+    region: Allocation,
     alignment: usize,
     offset: isize,
-) -> Address {
+) -> Allocation {
     align_allocation::<VM>(region, alignment, offset, VM::MIN_ALIGNMENT, false)
 }
 
 #[inline(always)]
 pub fn align_allocation<VM: VMBinding>(
-    region: Address,
+    region: Allocation,
     alignment: usize,
     offset: isize,
     known_alignment: usize,
     fillalignmentgap: bool,
-) -> Address {
-    if region.is_zero() {
-        return region;
-    }
-
+) -> Allocation {
+    let region = region?;
     debug_assert!(known_alignment >= VM::MIN_ALIGNMENT);
     // Make sure MIN_ALIGNMENT is reasonable.
     #[allow(clippy::assertions_on_constants)]
@@ -55,7 +57,7 @@ pub fn align_allocation<VM: VMBinding>(
 
     // No alignment ever required.
     if alignment <= known_alignment || VM::MAX_ALIGNMENT <= VM::MIN_ALIGNMENT {
-        return region;
+        return Ok(region);
     }
 
     // May require an alignment
@@ -69,7 +71,7 @@ pub fn align_allocation<VM: VMBinding>(
         fill_alignment_gap::<VM>(region, region + delta);
     }
 
-    region + delta
+    Ok(region + delta)
 }
 
 #[inline(always)]
@@ -152,7 +154,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     /// * `size`: the allocation size in bytes.
     /// * `align`: the required alignment in bytes.
     /// * `offset` the required offset in bytes.
-    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Address;
+    fn alloc(&mut self, size: usize, align: usize, offset: isize) -> Allocation;
 
     /// Slowpath allocation attempt. We break up the slowpath implementation into two parts
     /// in order to improve efficiency of our code by reducing cache misses.
@@ -162,7 +164,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     /// * `align`: the required alignment in bytes.
     /// * `offset` the required offset in bytes.
     #[inline(never)]
-    fn alloc_slow(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         self.alloc_slow_inline(size, align, offset)
     }
 
@@ -181,7 +183,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     /// * `align`: the required alignment in bytes.
     /// * `offset` the required offset in bytes.
     #[inline(always)]
-    fn alloc_slow_inline(&mut self, size: usize, align: usize, offset: isize) -> Address {
+    fn alloc_slow_inline(&mut self, size: usize, align: usize, offset: isize) -> Allocation {
         let tls = self.get_tls();
         let plan = self.get_plan().base();
         let is_mutator = VM::VMActivePlan::is_mutator(tls);
@@ -210,11 +212,11 @@ pub trait Allocator<VM: VMBinding>: Downcast {
             };
 
             if !is_mutator {
-                debug_assert!(!result.is_zero());
+                debug_assert!(!result.is_ok());
                 return result;
             }
 
-            if !result.is_zero() {
+            if !result.is_ok() {
                 // Report allocation success to assist OutOfMemory handling.
                 if !plan.allocation_success.load(Ordering::Relaxed) {
                     plan.allocation_success.store(true, Ordering::SeqCst);
@@ -276,7 +278,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                     trace!("Throw HeapOutOfMemory!");
                     VM::VMCollection::out_of_memory(tls, MmtkAllocationError::HeapOutOfMemory);
                     plan.allocation_success.swap(false, Ordering::SeqCst);
-                    return result;
+                    return Err(MmtkAllocationError::HeapOutOfMemory);
                 }
             }
 
@@ -308,7 +310,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     /// * `size`: the allocation size in bytes.
     /// * `align`: the required alignment in bytes.
     /// * `offset` the required offset in bytes.
-    fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Address;
+    fn alloc_slow_once(&mut self, size: usize, align: usize, offset: isize) -> Allocation;
 
     /// Single slowpath allocation attempt for stress test. When the stress factor is set (e.g. to
     /// N), we would expect for every N bytes allocated, we will trigger a stress GC.  However, for
@@ -344,7 +346,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
         align: usize,
         offset: isize,
         need_poll: bool,
-    ) -> Address {
+    ) -> Allocation {
         // If an allocator does thread local allocation but does not override this method to
         // provide a correct implementation, we will log a warning.
         if self.does_thread_local_allocation() && need_poll {

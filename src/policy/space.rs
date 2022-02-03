@@ -1,3 +1,4 @@
+use crate::util::alloc::{Allocation, MmtkAllocationError};
 use crate::util::conversions::*;
 use crate::util::metadata::side_metadata::{SideMetadataContext, SideMetadataSanity};
 use crate::util::Address;
@@ -274,7 +275,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
     fn get_page_resource(&self) -> &dyn PageResource<VM>;
     fn init(&mut self, vm_map: &'static VMMap);
 
-    fn acquire(&self, tls: VMThread, pages: usize) -> Address {
+    fn acquire(&self, tls: VMThread, pages: usize) -> Allocation {
         trace!("Space.acquire, tls={:?}", tls);
         // Should we poll to attempt to GC?
         // - If tls is collector, we cannot attempt a GC.
@@ -296,7 +297,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
             assert!(allow_gc, "GC is not allowed here: collection is not initialized (did you call initialize_collection()?).");
             pr.clear_request(pages_reserved);
             VM::VMCollection::block_for_gc(VMMutatorThread(tls)); // We have checked that this is mutator
-            unsafe { Address::zero() }
+            Err(MmtkAllocationErr:SpaceOutOfMemory)
         } else {
             debug!("Collection not required");
 
@@ -329,7 +330,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     }
 
                     debug!("Space.acquire(), returned = {}", res.start);
-                    res.start
+                    Ok(res.start)
                 }
                 Err(_) => {
                     // We thought we had memory to allocate, but somehow failed the allocation. Will force a GC.
@@ -342,7 +343,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     debug_assert!(gc_performed, "GC not performed when forced.");
                     pr.clear_request(pages_reserved);
                     VM::VMCollection::block_for_gc(VMMutatorThread(tls)); // We asserted that this is mutator.
-                    unsafe { Address::zero() }
+                    Err(MmtkAllocationError::SpaceOutOfMemory)
                 }
             }
         }
