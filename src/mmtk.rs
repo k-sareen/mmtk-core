@@ -50,7 +50,7 @@ pub struct MMTK<VM: VMBinding> {
     pub(crate) scheduler: Arc<GCWorkScheduler<VM>>,
     #[cfg(feature = "sanity")]
     pub(crate) sanity_checker: Mutex<SanityChecker>,
-    inside_harness: AtomicBool,
+    pub inside_harness: AtomicBool,
 }
 
 impl<VM: VMBinding> MMTK<VM> {
@@ -99,6 +99,7 @@ impl<VM: VMBinding> MMTK<VM> {
 
     pub fn harness_end(&'static self) {
         self.plan.base().stats.stop_all(self);
+        self.plan.base().write_gc_time();
         self.inside_harness.store(false, Ordering::SeqCst);
     }
 

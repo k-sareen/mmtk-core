@@ -30,10 +30,13 @@ use crate::util::{VMMutatorThread, VMWorkerThread};
 use crate::vm::*;
 use downcast_rs::Downcast;
 use enum_map::EnumMap;
+use std::fs::File;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use mmtk_macros::PlanTraceObject;
+
+pub struct GcEntry(pub usize, pub u128, pub u128);
 
 pub fn create_mutator<VM: VMBinding>(
     tls: VMMutatorThread,
@@ -391,6 +394,12 @@ pub struct BasePlan<VM: VMBinding> {
     /// Wrapper around analysis counters
     #[cfg(feature = "analysis")]
     pub analysis_manager: AnalysisManager<VM>,
+    // CSV file storing number of GC executions and their run times
+    pub gclog: Mutex<File>,
+    // Number of GCs executed
+    pub gcnum: AtomicUsize,
+    // Vector of GC entries
+    pub gcvec: Mutex<Vec<GcEntry>>,
 
     // Spaces in base plan
     #[cfg(feature = "code_space")]
@@ -465,6 +474,23 @@ impl<VM: VMBinding> BasePlan<VM> {
         // Initializing the analysis manager and routines
         #[cfg(feature = "analysis")]
         let analysis_manager = AnalysisManager::new(&stats);
+
+        use std::fs::OpenOptions;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let start_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_millis();
+        let file_name = format!("{}/{}-gclog.csv", *options.gclogs, start_ms);
+
+        let mut gclog = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_name.clone())
+            .unwrap();
+        println!("Create file: {}", file_name);
+
         BasePlan {
             #[cfg(feature = "code_space")]
             code_space: ImmortalSpace::new(
@@ -536,6 +562,9 @@ impl<VM: VMBinding> BasePlan<VM> {
             malloc_bytes: AtomicUsize::new(0),
             #[cfg(feature = "analysis")]
             analysis_manager,
+            gclog: Mutex::new(gclog),
+            gcnum: AtomicUsize::new(0),
+            gcvec: Mutex::new(vec![]),
         }
     }
 
@@ -869,6 +898,22 @@ impl<VM: VMBinding> BasePlan<VM> {
     #[cfg(feature = "malloc_counted_size")]
     pub fn get_malloc_bytes(&self) -> usize {
         self.malloc_bytes.load(Ordering::SeqCst)
+    }
+
+    pub fn add_gc_time(&self, start: u128, end: u128) {
+        let mut gcvec = self.gcvec.lock().unwrap();
+        gcvec.push(GcEntry(self.gcnum.load(Ordering::Relaxed), start, end - start));
+        self.gcnum.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn write_gc_time(&self) {
+        use std::io::Write;
+
+        let mut gclog = self.gclog.lock().unwrap();
+        let gcvec = self.gcvec.lock().unwrap();
+        for entry in &*gcvec {
+            writeln!(*gclog, "{},{},{}", entry.0, entry.1, entry.2).expect("Couldn't write to file");
+        }
     }
 }
 

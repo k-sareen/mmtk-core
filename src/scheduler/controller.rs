@@ -95,6 +95,13 @@ impl<VM: VMBinding> GCController<VM> {
 
     /// Coordinate workers to perform GC in response to a GC request.
     pub fn do_gc_until_completion(&mut self) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let start_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time before UNIX_EPOCH")
+            .as_nanos();
+
         // Schedule collection.
         ScheduleCollection.do_work_with_stat(&mut self.coordinator_worker, self.mmtk);
 
@@ -123,7 +130,7 @@ impl<VM: VMBinding> GCController<VM> {
         //       Otherwise, for generational GCs, workers will receive and process
         //       newly generated remembered-sets from those open buckets.
         //       But these remsets should be preserved until next GC.
-        EndOfGC.do_work_with_stat(&mut self.coordinator_worker, self.mmtk);
+        EndOfGC(start_ns).do_work_with_stat(&mut self.coordinator_worker, self.mmtk);
 
         self.scheduler.debug_assert_all_buckets_deactivated();
     }

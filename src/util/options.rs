@@ -325,6 +325,7 @@ options! {
     full_heap_system_gc:   bool                 [env_var: true, command_line: true]  [always_valid] = false,
     // Should we shrink/grow the heap to adjust to application working set? (not supported)
     variable_size_heap:    bool                 [env_var: true, command_line: true]  [always_valid] = true,
+    gclogs:                String               [env_var: true, command_line: true]  [always_valid] = ".".to_string(),
     // Should finalization be disabled?
     no_finalizer:          bool                 [env_var: true, command_line: true]  [always_valid] = false,
     // Should reference type processing be disabled?
