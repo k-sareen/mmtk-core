@@ -91,7 +91,7 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
     fn post_alloc(
         &mut self,
         refer: ObjectReference,
-        _bytes: usize,
+        bytes: usize,
         allocator: AllocationSemantics,
     ) {
         unsafe {
@@ -99,7 +99,7 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
                 .get_allocator_mut(self.config.allocator_mapping[allocator])
         }
         .get_space()
-        .initialize_object_metadata(refer, true)
+        .initialize_object_metadata(refer, bytes, true)
     }
 
     fn get_tls(&self) -> VMMutatorThread {
