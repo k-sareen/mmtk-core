@@ -22,6 +22,7 @@ use crate::util::options::UnsafeOptionsWrapper;
 use crate::util::VMWorkerThread;
 use crate::vm::VMBinding;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use enum_map::EnumMap;
 
@@ -54,6 +55,10 @@ impl<VM: VMBinding> Plan for MarkSweep<VM> {
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
         self.base().set_collection_kind::<Self>(self);
         self.base().set_gc_status(GcStatus::GcPrepare);
+        let gc_num = self.ms.gc_num.fetch_add(1, Ordering::SeqCst);
+        if gc_num == self.ms.num_collect_before_free {
+            self.ms.gc_num.store(0, Ordering::SeqCst);
+        }
         scheduler.schedule_common_work::<MSGCWorkContext<VM>>(self);
         scheduler.work_buckets[WorkBucketStage::Prepare].add(MSSweepChunks::<VM>::new(self));
     }
@@ -113,8 +118,10 @@ impl<VM: VMBinding> MarkSweep<VM> {
             ACTIVE_CHUNK_METADATA_SPEC,
         ]);
 
+        println!("GC frequency experiment stress {} num_collect_before_free {}", *options.stress_factor, *options.num_collect_before_free);
+
         let res = MarkSweep {
-            ms: MallocSpace::new(global_metadata_specs.clone()),
+            ms: MallocSpace::new(global_metadata_specs.clone(), *options.num_collect_before_free),
             common: CommonPlan::new(
                 vm_map,
                 mmapper,

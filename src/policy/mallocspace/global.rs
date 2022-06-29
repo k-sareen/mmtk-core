@@ -40,6 +40,8 @@ pub struct MallocSpace<VM: VMBinding> {
     pub chunk_addr_min: AtomicUsize, // XXX: have to use AtomicUsize to represent an Address
     pub chunk_addr_max: AtomicUsize,
     metadata: SideMetadataContext,
+    pub gc_num: AtomicUsize,
+    pub num_collect_before_free: usize,
     // Mapping between allocated address and its size - this is used to check correctness.
     // Size will be set to zero when the memory is freed.
     #[cfg(debug_assertions)]
@@ -211,7 +213,7 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for MallocSpac
 }
 
 impl<VM: VMBinding> MallocSpace<VM> {
-    pub fn new(global_side_metadata_specs: Vec<SideMetadataSpec>) -> Self {
+    pub fn new(global_side_metadata_specs: Vec<SideMetadataSpec>, num_collect_before_free: usize) -> Self {
         MallocSpace {
             phantom: PhantomData,
             active_bytes: AtomicUsize::new(0),
@@ -225,6 +227,8 @@ impl<VM: VMBinding> MallocSpace<VM> {
                     *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
                 ]),
             },
+            gc_num: AtomicUsize::new(0),
+            num_collect_before_free,
             #[cfg(debug_assertions)]
             active_mem: Mutex::new(HashMap::new()),
             #[cfg(debug_assertions)]
@@ -410,11 +414,14 @@ impl<VM: VMBinding> MallocSpace<VM> {
             trace!("Object {} has been allocated but not marked", object);
 
             // Free object
-            self.free_internal(obj_start, bytes, offset_malloc);
-            trace!("free object {}", object);
-            unsafe { unset_alloc_bit_unsafe(object) };
+            if self.gc_num.load(Ordering::Relaxed) >= self.num_collect_before_free {
+                self.free_internal(obj_start, bytes, offset_malloc);
+                trace!("free object {}", object);
+                unsafe { unset_alloc_bit_unsafe(object) };
+                return true;
+            }
 
-            true
+            false
         } else {
             // Live object that we have marked
 
