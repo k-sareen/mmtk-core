@@ -177,6 +177,11 @@ pub fn is_marked<VM: VMBinding>(object: ObjectReference, ordering: Option<Orderi
 }
 
 #[allow(unused)]
+pub(super) fn compare_exchange_page_mark(page_addr: Address) -> bool {
+    side_metadata::compare_exchange_atomic(&ACTIVE_PAGE_METADATA_SPEC, page_addr, 0, 1, Ordering::SeqCst, Ordering::SeqCst)
+}
+
+#[allow(unused)]
 pub(super) fn is_page_marked(page_addr: Address) -> bool {
     side_metadata::load_atomic(&ACTIVE_PAGE_METADATA_SPEC, page_addr, Ordering::SeqCst) == 1
 }
@@ -226,6 +231,7 @@ pub fn unset_alloc_bit(object: ObjectReference) {
     alloc_bit::unset_alloc_bit(object);
 }
 
+#[allow(unused)]
 pub(super) fn set_page_mark(page_addr: Address) {
     side_metadata::store_atomic(&ACTIVE_PAGE_METADATA_SPEC, page_addr, 1, Ordering::SeqCst);
 }

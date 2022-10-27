@@ -102,7 +102,7 @@ pub trait SFT {
         alloc_bit::is_alloced_object(addr)
     }
     /// Initialize object metadata (in the header, or in the side metadata).
-    fn initialize_object_metadata(&self, object: ObjectReference, bytes: usize, alloc: bool);
+    fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool);
     /// Trace objects through SFT. This along with [`SFTProcessEdges`](mmtk/scheduler/gc_work/SFTProcessEdges)
     /// provides an easy way for most plans to trace objects without the need to implement any plan-specific
     /// code. However, tracing objects for some policies are more complicated, and they do not provide an
@@ -168,7 +168,7 @@ impl SFT for EmptySpaceSFT {
         false
     }
 
-    fn initialize_object_metadata(&self, object: ObjectReference, _bytes: usize, _alloc: bool) {
+    fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         panic!(
             "Called initialize_object_metadata() on {:x}, which maps to an empty space",
             object
