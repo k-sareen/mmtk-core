@@ -7,7 +7,7 @@ use crate::util::opaque_pointer::*;
 use crate::util::options::AffinityKind;
 use crate::vm::Collection;
 use crate::vm::{GCThreadContext, VMBinding};
-use crossbeam::deque::{self, Steal};
+use crossbeam_deque::{self, Steal};
 use enum_map::Enum;
 use enum_map::{enum_map, EnumMap};
 use std::collections::HashMap;
@@ -101,7 +101,7 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
             self.clone(),
             true,
             self.coordinator_worker_shared.clone(),
-            deque::Worker::new_fifo(),
+            crossbeam_deque::Worker::new_fifo(),
         );
         let gc_controller = GCController::new(
             mmtk,

@@ -1,7 +1,7 @@
 use super::worker::WorkerMonitor;
 use super::*;
 use crate::vm::VMBinding;
-use crossbeam::deque::{Injector, Steal, Worker};
+use crossbeam_deque::{Injector, Steal, Worker};
 use enum_map::Enum;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
