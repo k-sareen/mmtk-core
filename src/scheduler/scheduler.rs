@@ -15,7 +15,7 @@ use crate::util::rust_util::array_from_fn;
 use crate::vm::Collection;
 use crate::vm::VMBinding;
 use crate::Plan;
-use crossbeam::deque::Steal;
+use crossbeam_deque::Steal;
 use enum_map::{Enum, EnumMap};
 use std::collections::HashMap;
 use std::sync::Arc;

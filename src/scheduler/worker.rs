@@ -7,8 +7,8 @@ use crate::util::opaque_pointer::*;
 use crate::vm::{Collection, GCThreadContext, VMBinding};
 use atomic::Atomic;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
-use crossbeam::deque::{self, Stealer};
-use crossbeam::queue::ArrayQueue;
+use crossbeam_deque::{self, Stealer};
+use crossbeam_queue::ArrayQueue;
 #[cfg(feature = "count_live_bytes_in_gc")]
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -87,7 +87,7 @@ pub struct GCWorker<VM: VMBinding> {
     /// Reference to the shared part of the GC worker.  It is used for synchronization.
     pub shared: Arc<GCWorkerShared<VM>>,
     /// Local work packet queue.
-    pub local_work_buffer: deque::Worker<Box<dyn GCWork<VM>>>,
+    pub local_work_buffer: crossbeam_deque::Worker<Box<dyn GCWork<VM>>>,
 }
 
 unsafe impl<VM: VMBinding> Sync for GCWorkerShared<VM> {}
@@ -124,7 +124,7 @@ impl<VM: VMBinding> GCWorker<VM> {
         ordinal: ThreadId,
         scheduler: Arc<GCWorkScheduler<VM>>,
         shared: Arc<GCWorkerShared<VM>>,
-        local_work_buffer: deque::Worker<Box<dyn GCWork<VM>>>,
+        local_work_buffer: crossbeam_deque::Worker<Box<dyn GCWork<VM>>>,
     ) -> Self {
         Self {
             tls: VMWorkerThread(VMThread::UNINITIALIZED),
@@ -295,7 +295,7 @@ impl<VM: VMBinding> WorkerGroup<VM> {
     /// Create a WorkerGroup
     pub fn new(num_workers: usize) -> Arc<Self> {
         let local_work_queues = (0..num_workers)
-            .map(|_| deque::Worker::new_fifo())
+            .map(|_| crossbeam_deque::Worker::new_fifo())
             .collect::<Vec<_>>();
 
         let workers_shared = (0..num_workers)
