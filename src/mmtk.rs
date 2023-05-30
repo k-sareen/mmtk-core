@@ -7,8 +7,9 @@ use crate::scheduler::GCWorkScheduler;
 use crate::util::edge_logger::EdgeLogger;
 use crate::util::finalizable_processor::FinalizableProcessor;
 use crate::util::heap::layout::{self, Mmapper, VMMap};
+use crate::util::heap::layout::vm_layout_constants::{AddressSpaceKind, VMLayoutConstants};
 use crate::util::opaque_pointer::*;
-use crate::util::options::Options;
+use crate::util::options::{GCTriggerSelector, Options};
 use crate::util::reference_processor::ReferenceProcessors;
 #[cfg(feature = "sanity")]
 use crate::util::sanity::sanity_checker::SanityChecker;
@@ -95,6 +96,28 @@ pub struct MMTK<VM: VMBinding> {
 
 impl<VM: VMBinding> MMTK<VM> {
     pub fn new(options: Arc<Options>) -> Self {
+        let heap_size = match *options.gc_trigger {
+            GCTriggerSelector::FixedHeapSize(x) => x,
+            _ => unimplemented!(),
+        };
+        VMLayoutConstants::set_address_space(AddressSpaceKind::_64BitsWithPointerCompression {
+            heap_size: heap_size,
+        });
+
+        // if cfg!(target_pointer_width = "32") {
+        //     VMLayoutConstants::set_address_space(AddressSpaceKind::_32Bits);
+        // } else if *options.use_35bit_address_space {
+        //     let heap_size = match *options.gc_trigger {
+        //         GCTriggerSelector::FixedHeapSize(x) => x,
+        //         _ => unimplemented!(),
+        //     };
+        //     VMLayoutConstants::set_address_space(AddressSpaceKind::_64BitsWithPointerCompression {
+        //         heap_size: heap_size,
+        //     });
+        // } else {
+        //     VMLayoutConstants::set_address_space(AddressSpaceKind::_64Bits);
+        // }
+
         // Initialize SFT first in case we need to use this in the constructor.
         // The first call will initialize SFT map. Other calls will be blocked until SFT map is initialized.
         SFT_MAP.initialize_once(&create_sft_map);

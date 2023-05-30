@@ -20,8 +20,12 @@ pub fn create_vm_map() -> Box<dyn VMMap> {
 
 #[cfg(target_pointer_width = "64")]
 pub fn create_vm_map() -> Box<dyn VMMap> {
-    // TODO: Map32 for compressed pointers
-    Box::new(map64::Map64::new())
+    use self::vm_layout_constants::VMLayoutConstants;
+    if VMLayoutConstants::get_address_space().pointer_compression() {
+        Box::new(map32::Map32::new())
+    } else {
+        Box::new(map64::Map64::new())
+    }
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -42,12 +46,12 @@ use std::ops::Range;
 /// Heap range include the availble range, but may include some address ranges
 /// that we count as part of the heap but we do not allocate into, such as
 /// VM spaces. However, currently, heap range is the same as available range.
-pub const fn heap_range() -> Range<Address> {
-    vm_layout_constants::HEAP_START..vm_layout_constants::HEAP_END
+pub fn heap_range() -> Range<Address> {
+    vm_layout_constants::VM_LAYOUT_CONSTANTS.heap_start..vm_layout_constants::VM_LAYOUT_CONSTANTS.heap_end
 }
 
 /// The avialable heap range between AVAILABLE_START and AVAILABLE_END.
 /// Available range is what MMTk may allocate into.
-pub const fn available_range() -> Range<Address> {
-    vm_layout_constants::AVAILABLE_START..vm_layout_constants::AVAILABLE_END
+pub fn available_range() -> Range<Address> {
+    vm_layout_constants::VM_LAYOUT_CONSTANTS.available_start()..vm_layout_constants::VM_LAYOUT_CONSTANTS.available_end()
 }

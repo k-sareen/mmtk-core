@@ -37,7 +37,7 @@ pub trait Mmapper: Sync {
     /// pages are not yet mapped, demand-zero map them. Note that mapping
     /// occurs at chunk granularity, not page granularity.<p>
     ///
-    /// Argumetns:
+    /// Arguments:
     /// `start`: The start of the range to be mapped.
     /// `pages`: The size of the range to be mapped, in pages
     // NOTE: There is a monotonicity assumption so that only updates require lock
@@ -67,7 +67,7 @@ pub(super) enum MapState {
     /// The chunk is unmapped and not managed by MMTk.
     Unmapped,
     /// The chunk is reserved for future use. MMTk reserved the address range but hasn't used it yet.
-    /// We have reserved the addresss range with mmap_noreserve with PROT_NONE.
+    /// We have reserved the address range with mmap_noreserve with PROT_NONE.
     Quarantined,
     /// The chunk is mapped by MMTk and is in use.
     Mapped,
