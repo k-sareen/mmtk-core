@@ -122,7 +122,7 @@ pub fn handle_mmap_error<VM: VMBinding>(error: Error, tls: VMThread) -> ! {
                 }
             }
         }
-        ErrorKind::AlreadyExists => panic!("Failed to mmap, the address is already mapped. Should MMTk quanrantine the address range first?"),
+        ErrorKind::AlreadyExists => panic!("Failed to mmap, the address is already mapped. Should MMTk quarantine the address range first?"),
         _ => {}
     }
     panic!("Unexpected mmap failure: {:?}", error)

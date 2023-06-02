@@ -102,15 +102,11 @@ impl VMLayoutConstants {
 
     pub fn new_64bit_with_pointer_compression(heap_size: usize) -> Self {
         assert!(
-            heap_size <= (32usize << 30),
-            "Heap size is larger than 32 GB"
+            heap_size <= (4usize << 30),
+            "Heap size is larger than 4 GB"
         );
-        let start = 0x4000_0000;
-        let end = match start + heap_size {
-            end if end <= (4usize << 30) => 4usize << 30,
-            end if end <= (32usize << 30) => 32usize << 30,
-            _ => 0x4000_0000 + (32usize << 30),
-        };
+        let start = 0x1000_0000;
+        let end = start + heap_size;
         Self {
             log_address_space: 32,
             heap_start: chunk_align_down(unsafe { Address::from_usize(start) }),
