@@ -23,6 +23,7 @@ rust_library {
     edition: "2021",
     features: [
         "default",
+        "is_mmtk_object",
         "vo_bit",
     ],
     flags: [
