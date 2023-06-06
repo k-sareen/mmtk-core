@@ -98,7 +98,8 @@ impl<VM: VMBinding> MMTK<VM> {
     pub fn new(options: Arc<Options>) -> Self {
         let heap_size = match *options.gc_trigger {
             GCTriggerSelector::FixedHeapSize(x) => x,
-            _ => unimplemented!(),
+            GCTriggerSelector::DynamicHeapSize(_, max) => max,
+            Delegated => panic!("Unexpected gc_trigger option. The gc_trigger should be one of FixedHeapSize or DynamicHeapSize"),
         };
         VMLayoutConstants::set_address_space(AddressSpaceKind::_64BitsWithPointerCompression {
             heap_size: heap_size,
