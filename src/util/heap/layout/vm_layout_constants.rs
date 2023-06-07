@@ -51,7 +51,7 @@ impl VMLayoutConstants {
     #[cfg(target_pointer_width = "32")]
     pub const LOG_ARCH_ADDRESS_SPACE: usize = 32;
     #[cfg(target_pointer_width = "64")]
-    pub const LOG_ARCH_ADDRESS_SPACE: usize = 47;
+    pub const LOG_ARCH_ADDRESS_SPACE: usize = 39;
 
     pub const fn max_space_extent(&self) -> usize {
         1 << self.log_space_extent
