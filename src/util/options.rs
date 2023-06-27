@@ -703,8 +703,8 @@ mod gc_trigger_tests {
 // Currently we allow all the options to be set by env var for the sake of convenience.
 // At some point, we may disallow this and all the options can only be set by command line.
 options! {
-    /// The GC plan to use.
-    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::GenImmix,
+    // The plan to use.
+    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::NoGC,
     /// Number of GC worker threads.
     threads:               usize                [env_var: true, command_line: true] [|v: &usize| *v > 0]    = num_cpus::get(),
     /// Enable an optimization that only scans the part of the stack that has changed since the last GC (not supported)
