@@ -9,6 +9,7 @@ use crate::util::*;
 use crate::vm::edge_shape::MemorySlice;
 use crate::vm::VMBinding;
 use crate::MMTK;
+use std::sync::Mutex;
 
 use super::gc_work::GenNurseryProcessEdges;
 use super::gc_work::ProcessModBuf;
@@ -24,7 +25,7 @@ pub struct GenObjectBarrierSemantics<
     /// Generational plan
     plan: &'static P,
     /// Object modbuf. Contains a list of objects that may contain pointers to the nursery space.
-    modbuf: VectorQueue<ObjectReference>,
+    modbuf: Mutex<VectorQueue<ObjectReference>>,
     /// Array-copy modbuf. Contains a list of sub-arrays or array slices that may contain pointers to the nursery space.
     region_modbuf: VectorQueue<VM::VMMemorySlice>,
 }
@@ -36,14 +37,16 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>>
         Self {
             mmtk,
             plan,
-            modbuf: VectorQueue::new(),
+            modbuf: Mutex::new(VectorQueue::new()),
             region_modbuf: VectorQueue::new(),
         }
     }
 
     fn flush_modbuf(&mut self) {
-        let buf = self.modbuf.take();
+        let mut modbuf = self.modbuf.lock().unwrap();
+        let buf = modbuf.take();
         if !buf.is_empty() {
+            println!("Flushing buf: {:?}", buf);
             self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure]
                 .add(ProcessModBuf::<GenNurseryProcessEdges<VM, P>>::new(buf));
         }
@@ -76,9 +79,14 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>> BarrierSem
         _slot: VM::VMEdge,
         _target: ObjectReference,
     ) {
+        println!("adding {:?} to modbuf", src);
         // enqueue the object
-        self.modbuf.push(src);
-        self.modbuf.is_full().then(|| self.flush_modbuf());
+        let mut modbuf = self.modbuf.lock().unwrap();
+        modbuf.push(src);
+        if modbuf.is_full() {
+            drop(modbuf);
+            self.flush_modbuf()
+        }
     }
 
     fn memory_region_copy_slow(&mut self, _src: VM::VMMemorySlice, dst: VM::VMMemorySlice) {
@@ -104,7 +112,11 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>> BarrierSem
 
     fn object_probable_write_slow(&mut self, obj: ObjectReference) {
         // enqueue the object
-        self.modbuf.push(obj);
-        self.modbuf.is_full().then(|| self.flush_modbuf());
+        let mut modbuf = self.modbuf.lock().unwrap();
+        modbuf.push(obj);
+        if modbuf.is_full() {
+            drop(modbuf);
+            self.flush_modbuf()
+        }
     }
 }

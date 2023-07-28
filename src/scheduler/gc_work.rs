@@ -788,6 +788,10 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
             process_edges_work.set_worker(worker);
 
             for object in buffer.iter().copied() {
+                if object.is_null() {
+                    // println!("root object = {}", object);
+                    // println!("buffer = {:?}", buffer);
+                }
                 let new_object = process_edges_work.trace_object(object);
                 debug_assert_eq!(
                     object, new_object,
@@ -801,6 +805,8 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
             process_edges_work.nodes.take()
         });
 
+        // println!("is_roots() = {}", self.roots());
+
         // If it is a root packet, scan the nodes that are first scanned;
         // otherwise, scan the nodes in the buffer.
         let objects_to_scan = scanned_root_objects.as_deref().unwrap_or(buffer);
@@ -811,6 +817,10 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
             let mut closure = ObjectsClosure::<Self::E>::new(worker);
             for object in objects_to_scan.iter().copied() {
                 if <VM as VMBinding>::VMScanning::support_edge_enqueuing(tls, object) {
+                    if object.is_null() {
+                        // println!("scan object = {}", object);
+                        // println!("objects_to_scan = {:?}", objects_to_scan);
+                    }
                     trace!("Scan object (edge) {}", object);
                     // If an object supports edge-enqueuing, we enqueue its edges.
                     <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);

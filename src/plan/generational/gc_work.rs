@@ -94,6 +94,7 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessModBuf<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
         // Flip the per-object unlogged bits to "unlogged" state.
         for obj in &self.modbuf {
+            // println!("modbuf obj = {:?}", obj);
             <E::VM as VMBinding>::VMObjectModel::GLOBAL_LOG_BIT_SPEC.store_atomic::<E::VM, u8>(
                 *obj,
                 1,
@@ -105,6 +106,7 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessModBuf<E> {
         if mmtk.plan.generational().unwrap().is_current_gc_nursery() {
             // Scan objects in the modbuf and forward pointers
             let modbuf = std::mem::take(&mut self.modbuf);
+            // println!("modbuf = {:?}", modbuf);
             GCWork::do_work(
                 &mut ScanObjects::<E>::new(modbuf, false, false),
                 worker,
