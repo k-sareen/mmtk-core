@@ -1033,6 +1033,7 @@ impl<VM: VMBinding> GCWork<VM> for ClearVOBitsAfterPrepare {
     fn do_work(&mut self, _worker: &mut GCWorker<VM>, _mmtk: &'static MMTK<VM>) {
         match self.scope {
             VOBitsClearingScope::FullGC => {
+                info!("Clearing VO bits for chunk {:?}", self.chunk);
                 vo_bit::bzero_vo_bit(self.chunk.start(), Chunk::BYTES);
             }
             VOBitsClearingScope::BlockOnly => {
