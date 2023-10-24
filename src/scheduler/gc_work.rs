@@ -642,6 +642,7 @@ pub trait ProcessEdgesWork:
 
     fn process_edge(&mut self, slot: EdgeOf<Self>) {
         let object = slot.load();
+        println!("slot = {:?}, object = {:?}", slot, object);
         let new_object = self.trace_object(object);
         if Self::OVERWRITE_REFERENCE {
             slot.store(new_object);
@@ -986,6 +987,7 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
 
     fn process_edge(&mut self, slot: EdgeOf<Self>) {
         let object = slot.load();
+        println!("slot = {:?}, object = {:?}", slot, object);
         let new_object = self.trace_object(object);
         if P::may_move_objects::<KIND>() {
             slot.store(new_object);

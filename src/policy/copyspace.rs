@@ -216,7 +216,7 @@ impl<VM: VMBinding> CopySpace<VM> {
         semantics: Option<CopySemantics>,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
-        trace!("copyspace.trace_object(, {:?}, {:?})", object, semantics,);
+        info!("copyspace.trace_object(, {:?}, {:?})", object, semantics,);
 
         // If this is not from space, we do not need to trace it (the object has been copied to the tosapce)
         if !self.is_from_space() {
@@ -234,18 +234,18 @@ impl<VM: VMBinding> CopySpace<VM> {
             object
         );
 
-        trace!("attempting to forward");
+        info!("attempting to forward {:?}", object);
         let forwarding_status = object_forwarding::attempt_to_forward::<VM>(object);
 
-        trace!("checking if object is being forwarded");
+        info!("checking if object is being forwarded");
         if object_forwarding::state_is_forwarded_or_being_forwarded(forwarding_status) {
-            trace!("... yes it is");
+            info!("... yes it is");
             let new_object =
                 object_forwarding::spin_and_get_forwarded_object::<VM>(object, forwarding_status);
-            trace!("Returning");
+            info!("Returning");
             new_object
         } else {
-            trace!("... no it isn't. Copying");
+            info!("... no it isn't. Copying");
             let new_object = object_forwarding::forward_object::<VM>(
                 object,
                 semantics.unwrap(),
@@ -255,9 +255,9 @@ impl<VM: VMBinding> CopySpace<VM> {
             #[cfg(feature = "vo_bit")]
             crate::util::metadata::vo_bit::set_vo_bit::<VM>(new_object);
 
-            trace!("Forwarding pointer");
+            info!("Forwarding pointer");
             queue.enqueue(new_object);
-            trace!("Copied [{:?} -> {:?}]", object, new_object);
+            info!("Copied [{:?} -> {:?}]", object, new_object);
             new_object
         }
     }
