@@ -21,7 +21,11 @@ rust_library {
         ":copy_mmtk_build_out",
     ],
     edition: "2021",
-    features: ["default"],
+    features: [
+        "default",
+        "is_mmtk_object",
+        "vo_bit",
+    ],
     flags: [
         "-C opt-level=0",
         "-C debuginfo=2",
