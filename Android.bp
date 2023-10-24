@@ -25,6 +25,7 @@ rust_library {
         "default",
         "is_mmtk_object",
         "vo_bit",
+        "immix_non_moving",
     ],
     flags: [
         "-C opt-level=0",
