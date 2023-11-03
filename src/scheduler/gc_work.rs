@@ -608,7 +608,6 @@ pub trait ProcessEdgesWork:
         if object.is_null() {
             return;
         }
-        println!("slot = {:?}, object = {:?}", slot, object);
         let new_object = self.trace_object(object);
         debug_assert!(!new_object.is_null());
         if Self::OVERWRITE_REFERENCE && new_object != object {
@@ -934,7 +933,6 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
         if object.is_null() {
             return;
         }
-        println!("slot = {:?}, object = {:?}", slot, object);
         let new_object = self.trace_object(object);
         debug_assert!(!new_object.is_null());
         if P::may_move_objects::<KIND>() && new_object != object {
