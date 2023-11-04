@@ -28,13 +28,24 @@ rust_library {
         "is_mmtk_object",
         "vo_bit",
     ],
+    // "debug" build
     flags: [
         "-C opt-level=0",
         "-C debuginfo=2",
         "-C strip=none",
         "-C debug-assertions=true",
         "-C overflow-checks=true",
+        "-C codegen-units=256",
     ],
+    // "release" build
+    // flags: [
+    //     "-C opt-level=3",
+    //     "-C debuginfo=0",
+    //     "-C strip=symbols",
+    //     "-C debug-assertions=false",
+    //     "-C overflow-checks=false",
+    //     "-C codegen-units=16",
+    // ],
     rustlibs: [
         "libatomic_rust",
         "libatomic_refcell",
