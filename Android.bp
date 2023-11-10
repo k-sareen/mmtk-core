@@ -25,8 +25,6 @@ rust_library {
         "default",
         "immix_non_moving",
         "immix_zero_on_release",
-        "is_mmtk_object",
-        "vo_bit",
     ],
     // "debug" build
     flags: [
