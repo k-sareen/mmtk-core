@@ -117,10 +117,12 @@ impl SFT for EmptySpaceSFT {
         EMPTY_SFT_NAME
     }
     fn is_live(&self, object: ObjectReference) -> bool {
-        panic!(
-            "Called is_live() on {:x}, which maps to an empty space",
-            object
-        )
+        // XXX(kunals): Returning false as the heap visitor queries if an object
+        // is live or not before visiting it. Until we have a better way to
+        // iterate through live objects (i.e. by skipping empty spaces
+        // completely), we should return false for the EmptySpaceSFT so that the
+        // heap iteration does not panic
+        false
     }
     #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool {
