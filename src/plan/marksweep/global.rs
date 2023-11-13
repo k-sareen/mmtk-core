@@ -7,6 +7,7 @@ use crate::plan::marksweep::mutator::ALLOCATOR_MAPPING;
 use crate::plan::AllocationSemantics;
 use crate::plan::Plan;
 use crate::plan::PlanConstraints;
+use crate::policy::marksweepspace::{MarkSweepSpace, MS_MAX_OBJECT_SIZE};
 use crate::policy::space::Space;
 use crate::scheduler::GCWorkScheduler;
 use crate::util::alloc::allocators::AllocatorSelector;
@@ -17,16 +18,6 @@ use crate::util::VMWorkerThread;
 use crate::vm::VMBinding;
 use enum_map::EnumMap;
 use mmtk_macros::{HasSpaces, PlanTraceObject};
-
-#[cfg(feature = "malloc_mark_sweep")]
-pub type MarkSweepSpace<VM> = crate::policy::marksweepspace::malloc_ms::MallocSpace<VM>;
-#[cfg(feature = "malloc_mark_sweep")]
-use crate::policy::marksweepspace::malloc_ms::MAX_OBJECT_SIZE;
-
-#[cfg(not(feature = "malloc_mark_sweep"))]
-pub type MarkSweepSpace<VM> = crate::policy::marksweepspace::native_ms::MarkSweepSpace<VM>;
-#[cfg(not(feature = "malloc_mark_sweep"))]
-use crate::policy::marksweepspace::native_ms::MAX_OBJECT_SIZE;
 
 #[derive(HasSpaces, PlanTraceObject)]
 pub struct MarkSweep<VM: VMBinding> {
@@ -39,7 +30,7 @@ pub struct MarkSweep<VM: VMBinding> {
 /// The plan constraints for the mark sweep plan.
 pub const MS_CONSTRAINTS: PlanConstraints = PlanConstraints {
     moves_objects: false,
-    max_non_los_default_alloc_bytes: MAX_OBJECT_SIZE,
+    max_non_los_default_alloc_bytes: MS_MAX_OBJECT_SIZE,
     may_trace_duplicate_edges: true,
     needs_prepare_mutator: !cfg!(feature = "malloc_mark_sweep")
         && !cfg!(feature = "eager_sweeping"),

@@ -16,3 +16,13 @@
 pub(crate) mod malloc_ms;
 /// Native mark sweep. This uses `MarkSweepSpace` and `FreeListAllocator`.
 pub(crate) mod native_ms;
+
+#[cfg(feature = "malloc_mark_sweep")]
+pub type MarkSweepSpace<VM> = crate::policy::marksweepspace::malloc_ms::MallocSpace<VM>;
+#[cfg(feature = "malloc_mark_sweep")]
+pub const MS_MAX_OBJECT_SIZE: usize = crate::policy::marksweepspace::malloc_ms::MAX_OBJECT_SIZE;
+
+#[cfg(not(feature = "malloc_mark_sweep"))]
+pub type MarkSweepSpace<VM> = crate::policy::marksweepspace::native_ms::MarkSweepSpace<VM>;
+#[cfg(not(feature = "malloc_mark_sweep"))]
+pub const MS_MAX_OBJECT_SIZE: usize = crate::policy::marksweepspace::native_ms::MAX_OBJECT_SIZE;
