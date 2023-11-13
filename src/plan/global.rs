@@ -5,7 +5,9 @@ use crate::global_state::GlobalState;
 use crate::mmtk::MMTK;
 use crate::plan::tracing::ObjectQueue;
 use crate::plan::Mutator;
+use crate::policy::gc_work::{DEFAULT_TRACE, PolicyTraceObject};
 use crate::policy::immortalspace::ImmortalSpace;
+use crate::policy::marksweepspace::MarkSweepSpace;
 use crate::policy::largeobjectspace::LargeObjectSpace;
 use crate::policy::space::{PlanCreateSpaceArgs, Space};
 #[cfg(feature = "vm_space")]
@@ -544,7 +546,7 @@ pub struct CommonPlan<VM: VMBinding> {
     pub los: LargeObjectSpace<VM>,
     // TODO: We should use a marksweep space for nonmoving.
     #[space]
-    pub nonmoving: ImmortalSpace<VM>,
+    pub nonmoving: MarkSweepSpace<VM>,
     #[parent]
     pub base: BasePlan<VM>,
 }
@@ -561,7 +563,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 args.get_space_args("los", true, VMRequest::discontiguous()),
                 false,
             ),
-            nonmoving: ImmortalSpace::new(args.get_space_args(
+            nonmoving: MarkSweepSpace::new(args.get_space_args(
                 "nonmoving",
                 true,
                 VMRequest::discontiguous(),
@@ -593,7 +595,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         }
         if self.nonmoving.in_space(object) {
             trace!("trace_object: object in nonmoving space");
-            return self.nonmoving.trace_object(queue, object);
+            return self.nonmoving.trace_object::<Q, DEFAULT_TRACE>(queue, object, None, worker);
         }
         self.base.trace_object::<Q>(queue, object, worker)
     }
@@ -620,7 +622,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         &self.los
     }
 
-    pub fn get_nonmoving(&self) -> &ImmortalSpace<VM> {
+    pub fn get_nonmoving(&self) -> &MarkSweepSpace<VM> {
         &self.nonmoving
     }
 }
