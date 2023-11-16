@@ -128,11 +128,7 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.is_object_pinned::<VM>(object)
     }
     fn is_movable(&self) -> bool {
-        // XXX(kunals): Always return true here as ART will otherwise start
-        // forcing only the non-moving space to allocate objects, instead of
-        // immix space. Change back when copying works
-        // !super::NEVER_MOVE_OBJECTS
-        true
+        !super::NEVER_MOVE_OBJECTS
     }
 
     #[cfg(feature = "sanity")]

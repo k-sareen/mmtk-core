@@ -120,11 +120,13 @@ impl Defrag {
         debug_assert!(super::DEFRAG);
         self.defrag_space_exhausted.store(false, Ordering::Release);
 
-        // Calculate available free space for defragmentation.
-
+        // Calculate available free space for defragmentation. Since
+        // plan.get_reserved_pages() already accounts for the collection
+        // reserved pages, we need to remove the defrag_headroom_pages() to get
+        // actual number of reserved pages
         let mut available_clean_pages_for_defrag = plan_stats.total_pages as isize
-            - plan_stats.reserved_pages as isize
-            + self.defrag_headroom_pages(space) as isize;
+            - (plan_stats.reserved_pages as isize
+                - self.defrag_headroom_pages(space) as isize);
         if available_clean_pages_for_defrag < 0 {
             available_clean_pages_for_defrag = 0
         };

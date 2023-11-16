@@ -23,8 +23,6 @@ rust_library {
     edition: "2021",
     features: [
         "default",
-        "immix_non_moving",
-        "immix_zero_on_release",
     ],
     // "debug" build
     flags: [
