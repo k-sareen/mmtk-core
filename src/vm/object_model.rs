@@ -475,6 +475,7 @@ pub trait ObjectModel<VM: VMBinding> {
 }
 
 pub mod specs {
+    use crate::util::constants::LOG_BITS_IN_BYTE;
     use crate::util::constants::LOG_BITS_IN_WORD;
     use crate::util::constants::LOG_BYTES_IN_PAGE;
     use crate::util::constants::LOG_MIN_OBJECT_SIZE;
@@ -593,7 +594,7 @@ pub mod specs {
         /// accessible by the language, it is okay that store a forwarding pointer overwrites object payload
         VMLocalForwardingPointerSpec,
         false,
-        LOG_BITS_IN_WORD,
+        (LOG_BITS_IN_BYTE + /* LOG_BYTES_IN_WORD */ 2) as usize,    // 32-bit forwarding pointer
         LOG_MIN_OBJECT_SIZE
     );
     // Forwarding bits: 2 bits per object, local

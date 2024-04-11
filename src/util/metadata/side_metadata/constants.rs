@@ -24,7 +24,8 @@ pub const GLOBAL_SIDE_METADATA_BASE_ADDRESS: Address = unsafe { Address::from_us
 #[cfg(target_pointer_width = "64")]
 /// Global side metadata start address
 pub const GLOBAL_SIDE_METADATA_BASE_ADDRESS: Address =
-    unsafe { Address::from_usize(0x0000_0c00_0000_0000usize) };
+    // 0x0000_003f_ffff_ffff
+    unsafe { Address::from_usize(0x0000_0020_0000_0000usize) };
 
 pub(crate) const GLOBAL_SIDE_METADATA_BASE_OFFSET: SideMetadataOffset =
     SideMetadataOffset::addr(GLOBAL_SIDE_METADATA_BASE_ADDRESS);
@@ -39,7 +40,7 @@ pub const VO_BIT_SIDE_METADATA_ADDR: Address =
 #[cfg(target_pointer_width = "32")]
 pub(super) const LOG_GLOBAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 3;
 #[cfg(target_pointer_width = "64")]
-pub(super) const LOG_GLOBAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 1;
+pub(super) const LOG_GLOBAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 2;
 
 /// This constant represents the worst-case ratio of source data size to global+local side metadata.
 /// A value of 1 means the space required for global+local side metadata must be less than 1/2nd of the source data.
@@ -47,7 +48,7 @@ pub(super) const LOG_GLOBAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 1;
 #[cfg(target_pointer_width = "32")]
 pub(super) const LOG_LOCAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 3;
 #[cfg(target_pointer_width = "64")]
-pub(super) const LOG_LOCAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 1;
+pub(super) const LOG_LOCAL_SIDE_METADATA_WORST_CASE_RATIO: usize = 2;
 
 /// The max bytes (in log2) that may be used for global side metadata.
 pub(crate) const LOG_MAX_GLOBAL_SIDE_METADATA_SIZE: usize =

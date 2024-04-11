@@ -74,7 +74,7 @@ mod libc_malloc {
     // Posix
     pub use libc::posix_memalign;
     // GNU
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     pub use libc::malloc_usable_size;
     #[cfg(target_os = "macos")]
     extern "C" {
