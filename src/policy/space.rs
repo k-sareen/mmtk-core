@@ -304,9 +304,10 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
     }
 
     fn reserved_pages(&self) -> usize {
-        let data_pages = self.get_page_resource().reserved_pages();
-        let meta_pages = self.common().metadata.calculate_reserved_pages(data_pages);
-        data_pages + meta_pages
+        // XXX(kunals): Android does not count metadata in heap size
+        self.get_page_resource().reserved_pages()
+        // let meta_pages = self.common().metadata.calculate_reserved_pages(data_pages);
+        // data_pages + meta_pages
     }
 
     /// Return the number of physical pages available.
