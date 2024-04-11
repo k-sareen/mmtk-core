@@ -231,7 +231,8 @@ impl Block {
                     }
 
                     #[cfg(feature = "immix_zero_on_release")]
-                    crate::util::memory::zero(line.start(), Line::BYTES);
+                    crate::util::memory::set(line.start(), 0xab, Line::BYTES);
+                    // crate::util::memory::zero(line.start(), Line::BYTES);
 
                     prev_line_is_marked = false;
                 }
