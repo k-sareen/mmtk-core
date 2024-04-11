@@ -5,12 +5,14 @@ use crate::{plan::generational::gc_work::GenNurseryProcessEdges, vm::VMBinding};
 
 use super::global::StickyImmix;
 
-pub struct StickyImmixNurseryGCWorkContext<VM: VMBinding>(std::marker::PhantomData<VM>);
-impl<VM: VMBinding> crate::scheduler::GCWorkContext for StickyImmixNurseryGCWorkContext<VM> {
+pub struct StickyImmixNurseryGCWorkContext<VM: VMBinding, const KIND: TraceKind>(
+    std::marker::PhantomData<VM>
+);
+impl<VM: VMBinding, const KIND: TraceKind> crate::scheduler::GCWorkContext for StickyImmixNurseryGCWorkContext<VM, KIND> {
     type VM = VM;
     type PlanType = StickyImmix<VM>;
-    type ProcessEdgesWorkType = GenNurseryProcessEdges<VM, Self::PlanType>;
-    type TPProcessEdges = GenNurseryProcessEdges<VM, Self::PlanType>;
+    type ProcessEdgesWorkType = GenNurseryProcessEdges<VM, Self::PlanType, KIND>;
+    type TPProcessEdges = GenNurseryProcessEdges<VM, Self::PlanType, TRACE_KIND_TRANSITIVE_PIN>;
 }
 
 pub struct StickyImmixMatureGCWorkContext<VM: VMBinding, const KIND: TraceKind>(

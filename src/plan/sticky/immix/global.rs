@@ -4,7 +4,12 @@ use crate::plan::global::CreateGeneralPlanArgs;
 use crate::plan::global::CreateSpecificPlanArgs;
 use crate::plan::immix;
 use crate::plan::PlanConstraints;
+use crate::policy::gc_work::DEFAULT_TRACE;
+use crate::policy::gc_work::PolicyTraceObject;
+use crate::policy::gc_work::TraceKind;
+use crate::policy::gc_work::TRACE_KIND_TRANSITIVE_PIN;
 use crate::policy::immix::ImmixSpace;
+use crate::policy::immix::TRACE_KIND_FAST;
 use crate::policy::sft::SFT;
 use crate::policy::space::Space;
 use crate::util::copy::CopyConfig;
@@ -85,7 +90,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         if !is_full_heap {
             info!("Nursery GC");
             // nursery GC -- we schedule it
-            scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM>>(self);
+            scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>>(self);
         } else {
             info!("Full heap GC");
             use crate::plan::immix::Immix;
@@ -113,6 +118,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
                 crate::policy::immix::defrag::StatsForDefrag::new(self),
             );
             self.immix.common.los.prepare(false);
+            // self.immix.common.nonmoving.prepare(false);
         } else {
             self.full_heap_gc_count.lock().unwrap().inc();
             self.immix.prepare(tls);
@@ -226,7 +232,7 @@ impl<VM: VMBinding> GenerationalPlan for StickyImmix<VM> {
 }
 
 impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> for StickyImmix<VM> {
-    fn trace_object_nursery<Q: crate::ObjectQueue>(
+    fn trace_object_nursery<Q: crate::ObjectQueue, const KIND: TraceKind>(
         &self,
         queue: &mut Q,
         object: crate::util::ObjectReference,
@@ -238,27 +244,7 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
                 trace!("Immix mature object {}, skip", object);
                 return object;
             } else {
-                let object = if crate::policy::immix::PREFER_COPY_ON_NURSERY_GC {
-                    let ret = self.immix.immix_space.trace_object_with_opportunistic_copy(
-                        queue,
-                        object,
-                        // We just use default copy here. We have set args for ImmixSpace to deal with unlogged bit,
-                        // and we do not need to use CopySemantics::PromoteToMature.
-                        CopySemantics::DefaultCopy,
-                        worker,
-                        true,
-                    );
-                    trace!(
-                        "Immix nursery object {} is being traced with opportunistic copy {}",
-                        object,
-                        if ret == object {
-                            "".to_string()
-                        } else {
-                            format!(" -> new object {}", ret)
-                        }
-                    );
-                    ret
-                } else {
+                let object = if KIND == TRACE_KIND_TRANSITIVE_PIN || KIND == TRACE_KIND_FAST {
                     trace!(
                         "Immix nursery object {} is being traced without moving",
                         object
@@ -266,6 +252,36 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
                     self.immix
                         .immix_space
                         .trace_object_without_moving(queue, object)
+                } else {
+                    if crate::policy::immix::PREFER_COPY_ON_NURSERY_GC {
+                        let ret = self.immix.immix_space.trace_object_with_opportunistic_copy(
+                            queue,
+                            object,
+                            // We just use default copy here. We have set args for ImmixSpace to deal with unlogged bit,
+                            // and we do not need to use CopySemantics::PromoteToMature.
+                            CopySemantics::DefaultCopy,
+                            worker,
+                            true,
+                        );
+                        trace!(
+                            "Immix nursery object {} is being traced with opportunistic copy {}",
+                            object,
+                            if ret == object {
+                                "".to_string()
+                            } else {
+                                format!("-> new object {}", ret)
+                            }
+                        );
+                        ret
+                    } else {
+                        trace!(
+                            "Immix nursery object {} is being traced without moving",
+                            object
+                        );
+                        self.immix
+                            .immix_space
+                            .trace_object_without_moving(queue, object)
+                    }
                 };
 
                 return object;
@@ -278,6 +294,14 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
                 .common()
                 .get_los()
                 .trace_object::<Q>(queue, object);
+        }
+
+        if self.immix.common().get_nonmoving().in_space(object) {
+            return self
+                .immix
+                .common()
+                .get_nonmoving()
+                .trace_object_nursery::<Q>(queue, object);
         }
 
         object
