@@ -13,10 +13,10 @@ const FORWARDING_MASK: u8 = 0b11;
 const FORWARDING_BITS: usize = 2;
 
 // copy address mask
-#[cfg(target_pointer_width = "64")]
-const FORWARDING_POINTER_MASK: usize = 0x00ff_ffff_ffff_fff8;
-#[cfg(target_pointer_width = "32")]
-const FORWARDING_POINTER_MASK: usize = 0xffff_fffc;
+// #[cfg(target_pointer_width = "64")]
+// const FORWARDING_POINTER_MASK: usize = 0x00ff_ffff_ffff_fff8;
+// #[cfg(target_pointer_width = "32")]
+const FORWARDING_POINTER_MASK: u32 = 0xffff_fffc;
 
 /// Attempt to become the worker thread who will forward the object.
 /// The successful worker will set the object forwarding bits to BEING_FORWARDED, preventing other workers from forwarding the same object.
@@ -81,9 +81,9 @@ pub fn forward_object<VM: VMBinding>(
 ) -> ObjectReference {
     let new_object = VM::VMObjectModel::copy(object, semantics, copy_context);
     if let Some(shift) = forwarding_bits_offset_in_forwarding_pointer::<VM>() {
-        VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, usize>(
+        VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
             object,
-            new_object.to_raw_address().as_usize() | ((FORWARDED as usize) << shift),
+            (new_object.to_raw_address().as_usize() | ((FORWARDED as usize) << shift)).try_into().unwrap(),
             None,
             Ordering::SeqCst,
         )
@@ -151,11 +151,11 @@ pub fn read_forwarding_pointer<VM: VMBinding>(object: ObjectReference) -> Object
     // We write the forwarding poiner. We know it is an object reference.
     unsafe {
         ObjectReference::from_raw_address(crate::util::Address::from_usize(
-            VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, usize>(
+            VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
                 object,
                 Some(FORWARDING_POINTER_MASK),
                 Ordering::SeqCst,
-            ),
+            ) as usize
         ))
     }
 }
@@ -174,9 +174,9 @@ pub fn write_forwarding_pointer<VM: VMBinding>(
     );
 
     trace!("write_forwarding_pointer({}, {})", object, new_object);
-    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, usize>(
+    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
         object,
-        new_object.to_raw_address().as_usize(),
+        new_object.to_raw_address().as_usize().try_into().unwrap(),
         Some(FORWARDING_POINTER_MASK),
         Ordering::SeqCst,
     )

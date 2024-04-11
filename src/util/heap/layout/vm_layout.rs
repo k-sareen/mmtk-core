@@ -51,8 +51,9 @@ pub struct VMLayout {
 impl VMLayout {
     #[cfg(target_pointer_width = "32")]
     pub const LOG_ARCH_ADDRESS_SPACE: usize = 32;
+    /// Android-specific: Android phones have a 39-bit address space
     #[cfg(target_pointer_width = "64")]
-    pub const LOG_ARCH_ADDRESS_SPACE: usize = 47;
+    pub const LOG_ARCH_ADDRESS_SPACE: usize = 38;
     /// An upper bound on the extent of any space in the
     /// current memory layout
     pub const fn max_space_extent(&self) -> usize {
@@ -141,12 +142,12 @@ impl VMLayout {
     #[cfg(target_pointer_width = "64")]
     pub const fn new_64bit() -> Self {
         let layout64 = Self {
-            log_address_space: 47,
+            log_address_space: 38,
             heap_start: chunk_align_down(unsafe {
-                Address::from_usize(0x0000_0200_0000_0000usize)
+                Address::from_usize(0x0000_0002_0000_0000usize)
             }),
-            heap_end: chunk_align_up(unsafe { Address::from_usize(0x0000_2200_0000_0000usize) }),
-            log_space_extent: 41,
+            heap_end: chunk_align_up(unsafe { Address::from_usize(0x0000_0020_0000_0000usize) }),
+            log_space_extent: 33,
             force_use_contiguous_spaces: true,
         };
         layout64.validate();

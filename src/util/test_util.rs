@@ -40,7 +40,7 @@ mod test {
 }
 
 // Test with an address that works for 32bits.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 const TEST_ADDRESS: Address =
     crate::util::conversions::chunk_align_down(unsafe { Address::from_usize(0x6000_0000) });
 #[cfg(target_os = "macos")]

@@ -1,6 +1,6 @@
 use super::worker::ThreadId;
 use crate::util::options::AffinityKind;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use libc::{cpu_set_t, sched_getaffinity, sched_setaffinity, CPU_COUNT, CPU_SET, CPU_ZERO};
 
 /// Represents the ID of a logical CPU on a system.
@@ -8,7 +8,7 @@ pub type CoreId = u16;
 
 // XXX: Maybe in the future we can use a library such as https://github.com/Elzair/core_affinity_rs
 // to have an OS agnostic way of setting thread affinity.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 /// Return the total number of cores allocated to the program.
 pub fn get_total_num_cpus() -> u16 {
     use std::mem::MaybeUninit;
@@ -20,7 +20,7 @@ pub fn get_total_num_cpus() -> u16 {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 /// Return the total number of cores allocated to the program.
 pub fn get_total_num_cpus() -> u16 {
     unimplemented!()
@@ -42,7 +42,7 @@ impl AffinityKind {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 /// Bind the current thread to the specified core.
 fn bind_current_thread_to_core(cpu: CoreId) {
     use std::mem::MaybeUninit;
@@ -54,7 +54,7 @@ fn bind_current_thread_to_core(cpu: CoreId) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 /// Bind the current thread to the specified core.
 fn bind_current_thread_to_core(_cpu: CoreId) {
     unimplemented!()
