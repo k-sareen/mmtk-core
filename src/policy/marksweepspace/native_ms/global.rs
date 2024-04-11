@@ -123,7 +123,11 @@ impl<VM: VMBinding> SFT for MarkSweepSpace<VM> {
         true
     }
 
-    fn initialize_object_metadata(&self, _object: crate::util::ObjectReference, _alloc: bool) {
+    fn initialize_object_metadata(&self, object: crate::util::ObjectReference, _alloc: bool) {
+        // if self.common.needs_log_bit {
+        //     VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+        // }
+
         #[cfg(feature = "vo_bit")]
         crate::util::metadata::vo_bit::set_vo_bit::<VM>(_object);
     }
@@ -236,6 +240,42 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         }
     }
 
+    pub fn is_marked(&self, object: ObjectReference) -> bool {
+        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst)
+    }
+
+    fn is_object_in_nursery(&self, object: ObjectReference) -> bool {
+        self.in_space(object) && !self.is_marked(object)
+    }
+
+    fn test_and_mark(&self, object: ObjectReference) -> bool {
+        loop {
+            let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
+                object,
+                None,
+                Ordering::SeqCst,
+            );
+            if old_value == 1 {
+                return false;
+            }
+
+            if VM::VMObjectModel::LOCAL_MARK_BIT_SPEC
+                .compare_exchange_metadata::<VM, u8>(
+                    object,
+                    old_value,
+                    1,
+                    None,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                break;
+            }
+        }
+        true
+    }
+
     fn trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,
@@ -247,13 +287,43 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             "Cannot mark an object {} that was not alloced by free list allocator.",
             object,
         );
-        if !VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst) {
-            VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.mark::<VM>(object, Ordering::SeqCst);
+
+        if self.test_and_mark(object) {
             let block = Block::containing::<VM>(object);
             block.set_state(BlockState::Marked);
             queue.enqueue(object);
+            if self.common.needs_log_bit {
+                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+            }
         }
         object
+    }
+
+    pub fn trace_object_nursery<Q: ObjectQueue>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+    ) -> ObjectReference {
+        debug_assert!(!object.is_null());
+        debug_assert!(
+            self.in_space(object),
+            "Cannot mark an object {} that was not alloced by free list allocator.",
+            object,
+        );
+
+        if !self.is_object_in_nursery(object) {
+            object
+        } else {
+            if self.test_and_mark(object) {
+                let block = Block::containing::<VM>(object);
+                block.set_state(BlockState::Marked);
+                queue.enqueue(object);
+                if self.common.needs_log_bit {
+                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_as_unlogged::<VM>(object, Ordering::SeqCst);
+                }
+            }
+            object
+        }
     }
 
     pub fn record_new_block(&self, block: Block) {
@@ -265,7 +335,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         Block::NEXT_BLOCK_TABLE
     }
 
-    pub fn prepare(&mut self) {
+    pub fn prepare(&mut self, _full_heap: bool) {
         if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC {
             for chunk in self.chunk_map.all_chunks() {
                 side.bzero_metadata(chunk.start(), Chunk::BYTES);

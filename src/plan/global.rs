@@ -622,7 +622,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
     pub fn prepare(&mut self, tls: VMWorkerThread, full_heap: bool) {
         self.immortal.prepare();
         self.los.prepare(full_heap);
-        self.nonmoving.prepare();
+        self.nonmoving.prepare(full_heap);
         self.base.prepare(tls, full_heap)
     }
 
