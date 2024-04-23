@@ -109,7 +109,8 @@ pub const BITS_IN_PAGE: usize = 1 << LOG_BITS_IN_PAGE;
 pub const LOG_BYTES_IN_ADDRESS_SPACE: u8 = BITS_IN_ADDRESS as u8;
 
 // TODO: Should this be VM specific?
-pub const LOG_MIN_OBJECT_SIZE: u8 = LOG_BYTES_IN_WORD;
+// pub const LOG_MIN_OBJECT_SIZE: u8 = LOG_BYTES_IN_WORD;
+pub const LOG_MIN_OBJECT_SIZE: u8 = 3;  // 32-bit klass_ pointer and 32-bit lock-word
 pub const MIN_OBJECT_SIZE: usize = 1 << LOG_MIN_OBJECT_SIZE;
 
 /****************************************************************************
