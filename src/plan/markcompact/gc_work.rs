@@ -54,7 +54,7 @@ impl<VM: VMBinding> GCWork<VM> for UpdateReferences<VM> {
             mmtk.get_plan().get_collection_reserved_pages(),
         );
         #[cfg(feature = "extreme_assertions")]
-        mmtk.edge_logger.reset();
+        mmtk.slot_logger.reset();
 
         // We do two passes of transitive closures. We clear the live bytes from the first pass.
         #[cfg(feature = "count_live_bytes_in_gc")]
