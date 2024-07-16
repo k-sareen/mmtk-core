@@ -15,7 +15,7 @@ rust_library {
     host_supported: true,
     crate_name: "mmtk",
     cargo_env_compat: true,
-    cargo_pkg_version: "0.22.1",
+    cargo_pkg_version: "0.23.0",
     srcs: [
         "src/lib.rs",
         ":copy_mmtk_build_out",
@@ -91,7 +91,7 @@ rust_proc_macro {
     name: "libmmtk_macros",
     crate_name: "mmtk_macros",
     cargo_env_compat: true,
-    cargo_pkg_version: "0.20.0",
+    cargo_pkg_version: "0.23.0",
     srcs: [
         "macros/src/lib.rs",
         ":copy_mmtk_build_out",
