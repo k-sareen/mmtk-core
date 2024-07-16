@@ -15,7 +15,7 @@ rust_library {
     host_supported: true,
     crate_name: "mmtk",
     cargo_env_compat: true,
-    cargo_pkg_version: "0.20.0",
+    cargo_pkg_version: "0.21.0",
     srcs: [
         "src/lib.rs",
         ":copy_mmtk_build_out",
