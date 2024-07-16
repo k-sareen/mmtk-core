@@ -260,7 +260,7 @@ enum WorkerCreationState<VM: VMBinding> {
     /// been spawn.
     Initial {
         /// The local work queues for to-be-created workers.
-        local_work_queues: Vec<deque::Worker<Box<dyn GCWork<VM>>>>,
+        local_work_queues: Vec<crossbeam_deque::Worker<Box<dyn GCWork<VM>>>>,
     },
     /// All worker threads are spawn and running.  `GCWorker` structs have been transferred to
     /// worker threads.
@@ -343,7 +343,7 @@ impl<VM: VMBinding> WorkerGroup<VM> {
     #[allow(clippy::vec_box)] // See `WorkerCreationState::Surrendered`.
     fn create_workers(
         &self,
-        local_work_queues: Vec<deque::Worker<Box<dyn GCWork<VM>>>>,
+        local_work_queues: Vec<crossbeam_deque::Worker<Box<dyn GCWork<VM>>>>,
         mmtk: &'static MMTK<VM>,
     ) -> Vec<Box<GCWorker<VM>>> {
         debug!("Creating GCWorker instances...");
