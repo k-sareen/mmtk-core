@@ -143,13 +143,13 @@ pub(super) fn try_map_per_chunk_metadata_space(
                     panic!("We have failed mmap");
                 }
             }
-            trace!(
-                "try_map_per_chunk_metadata_space({}, 0x{:x}, 0x{:x}) -> {:#?}",
-                start,
-                size,
-                local_per_chunk,
-                res
-            );
+            // trace!(
+            //     "try_map_per_chunk_metadata_space({}, 0x{:x}, 0x{:x}) -> {:#?}",
+            //     start,
+            //     size,
+            //     local_per_chunk,
+            //     res
+            // );
             return Result::Err(res.err().unwrap());
         }
         if munmap_first_chunk.is_none() {
@@ -160,12 +160,12 @@ pub(super) fn try_map_per_chunk_metadata_space(
         total_mapped += local_per_chunk;
     }
 
-    trace!(
-        "try_map_per_chunk_metadata_space({}, 0x{:x}, 0x{:x}) -> OK(())",
-        start,
-        size,
-        local_per_chunk
-    );
+    // trace!(
+    //     "try_map_per_chunk_metadata_space({}, 0x{:x}, 0x{:x}) -> OK(())",
+    //     start,
+    //     size,
+    //     local_per_chunk
+    // );
     Ok(total_mapped)
 }
 

@@ -312,9 +312,11 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         );
 
         if !self.is_object_in_nursery(object) {
+            trace!("MarkSweep mature object {}, skip", object);
             object
         } else {
             if self.test_and_mark(object) {
+                trace!("MarkSweep nursery object {}, tracing", object);
                 let block = Block::containing::<VM>(object);
                 block.set_state(BlockState::Marked);
                 queue.enqueue(object);

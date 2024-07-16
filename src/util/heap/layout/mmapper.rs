@@ -87,7 +87,7 @@ impl MapState {
         mmap_start: Address,
         strategy: MmapStrategy,
     ) -> Result<()> {
-        trace!(
+        debug!(
             "Trying to map {} - {}",
             mmap_start,
             mmap_start + MMAP_CHUNK_BYTES
