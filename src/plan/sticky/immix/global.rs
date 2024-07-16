@@ -289,6 +289,10 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
         }
 
         if self.immix.common().get_los().in_space(object) {
+            trace!(
+                "LOS object {} is being traced",
+                object
+            );
             return self
                 .immix
                 .common()
@@ -297,6 +301,10 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
         }
 
         if self.immix.common().get_nonmoving().in_space(object) {
+            trace!(
+                "MarkSweep object {} is being traced",
+                object
+            );
             return self
                 .immix
                 .common()

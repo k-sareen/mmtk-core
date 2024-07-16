@@ -216,13 +216,13 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
         let vm_live_pages = conversions::bytes_to_pages_up(vm_live_bytes);
         let total = used_pages + collection_reserve + vm_live_pages;
 
-        trace!(
-            "Reserved pages = {}, used pages: {}, collection reserve: {}, VM live pages: {}",
-            total,
-            used_pages,
-            collection_reserve,
-            vm_live_pages,
-        );
+        // trace!(
+        //     "Reserved pages = {}, used pages: {}, collection reserve: {}, VM live pages: {}",
+        //     total,
+        //     used_pages,
+        //     collection_reserve,
+        //     vm_live_pages,
+        // );
 
         total
     }
@@ -250,12 +250,12 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
         //    may be larger than the reserved pages before a GC, as we may end up using more memory for thread local
         //    buffers for copy allocators).
         let available_pages = total_pages.saturating_sub(reserved_pages);
-        trace!(
-            "Total pages = {}, reserved pages = {}, available pages = {}",
-            total_pages,
-            reserved_pages,
-            available_pages,
-        );
+        // trace!(
+        //     "Total pages = {}, reserved pages = {}, available pages = {}",
+        //     total_pages,
+        //     reserved_pages,
+        //     available_pages,
+        // );
         available_pages
     }
 

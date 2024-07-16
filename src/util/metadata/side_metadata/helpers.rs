@@ -100,12 +100,12 @@ pub(crate) fn address_to_meta_address(
     #[cfg(target_pointer_width = "64")]
     let res = { address_to_contiguous_meta_address(metadata_spec, data_addr) };
 
-    trace!(
-        "address_to_meta_address({:?}, addr: {}) -> 0x{:x}",
-        metadata_spec,
-        data_addr,
-        res
-    );
+    // trace!(
+    //     "address_to_meta_address({:?}, addr: {}) -> 0x{:x}",
+    //     metadata_spec,
+    //     data_addr,
+    //     res
+    // );
 
     res
 }
