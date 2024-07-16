@@ -8,7 +8,7 @@ use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::heap::externalpageresource::{ExternalPageResource, ExternalPages};
 use crate::util::heap::layout::vm_layout::BYTES_IN_CHUNK;
 use crate::util::heap::PageResource;
-use crate::util::metadata::mark_bit::MarkState;
+use crate::util::metadata::{mark_bit::MarkState, MetadataSpec};
 use crate::util::opaque_pointer::*;
 use crate::util::ObjectReference;
 use crate::vm::{ObjectModel, VMBinding};
@@ -221,6 +221,14 @@ impl<VM: VMBinding> VMSpace<VM> {
             start: start.align_down(BYTES_IN_PAGE),
             end: end.align_up(BYTES_IN_PAGE),
         });
+
+        if self.common.needs_log_bit {
+            if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
+                side.bset_metadata(start, size);
+            } else {
+                unimplemented!("We cannot bulk set unlogged bit.")
+            }
+        }
     }
 
     pub fn prepare(&mut self) {
