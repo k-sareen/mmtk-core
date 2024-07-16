@@ -7,6 +7,9 @@ use libc::{PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE};
 use std::io::{Error, Result};
 use sysinfo::{RefreshKind, System, SystemExt};
 
+#[cfg(target_os = "android")]
+pub const MAP_FIXED_NOREPLACE: libc::c_int = 0x100000;
+
 /// Check the result from an mmap function in this module.
 /// Return true if the mmap has failed due to an existing conflicting mapping.
 pub(crate) fn result_is_mapped(result: Result<()>) -> bool {
@@ -50,9 +53,12 @@ pub unsafe fn dzmmap(start: Address, size: usize, strategy: MmapStrategy) -> Res
     ret
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(target_os = "linux")]
 // MAP_FIXED_NOREPLACE returns EEXIST if already mapped
 const MMAP_FLAGS: libc::c_int = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_FIXED_NOREPLACE;
+#[cfg(target_os = "android")]
+// MAP_FIXED_NOREPLACE returns EEXIST if already mapped
+const MMAP_FLAGS: libc::c_int = libc::MAP_ANON | libc::MAP_PRIVATE | MAP_FIXED_NOREPLACE;
 #[cfg(target_os = "macos")]
 // MAP_FIXED is used instead of MAP_FIXED_NOREPLACE (which is not available on macOS). We are at the risk of overwriting pre-existing mappings.
 const MMAP_FLAGS: libc::c_int = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_FIXED;
