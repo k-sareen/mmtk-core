@@ -50,6 +50,7 @@ rust_library {
         "libatomic_rust",
         "libatomic_refcell",
         "libatomic_traits",
+        "libbytemuck",
         "libcfg_if",
         "libcrossbeam_deque",
         "libcrossbeam_queue",
