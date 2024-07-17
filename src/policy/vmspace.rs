@@ -8,7 +8,9 @@ use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::heap::externalpageresource::{ExternalPageResource, ExternalPages};
 use crate::util::heap::layout::vm_layout::BYTES_IN_CHUNK;
 use crate::util::heap::PageResource;
-use crate::util::metadata::{mark_bit::MarkState, MetadataSpec};
+use crate::util::metadata::mark_bit::MarkState;
+#[cfg(feature = "set_unlog_bits_vm_space")]
+use crate::util::metadata::MetadataSpec;
 use crate::util::opaque_pointer::*;
 use crate::util::ObjectReference;
 use crate::vm::{ObjectModel, VMBinding};
@@ -222,11 +224,12 @@ impl<VM: VMBinding> VMSpace<VM> {
             end: end.align_up(BYTES_IN_PAGE),
         });
 
+        #[cfg(feature = "set_unlog_bits_vm_space")]
         if self.common.needs_log_bit {
+            // Bulk set unlog bits for all addresses in the VM space. This ensures that any
+            // modification to the bootimage is logged
             if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
                 side.bset_metadata(start, size);
-            } else {
-                unimplemented!("We cannot bulk set unlogged bit.")
             }
         }
     }
