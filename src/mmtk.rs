@@ -391,6 +391,15 @@ impl<VM: VMBinding> MMTK<VM> {
         self.state.is_user_triggered_collection()
     }
 
+    /// Return true if the current GC is a nursery GC or not.
+    pub fn is_nursery_collection(&self) -> bool {
+        if let Some(gen) = self.get_plan().generational() {
+            gen.is_current_gc_nursery()
+        } else {
+            false
+        }
+    }
+
     /// The application code has requested a collection. This is just a GC hint, and
     /// we may ignore it.
     ///
