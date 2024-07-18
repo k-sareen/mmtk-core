@@ -321,7 +321,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 block.set_state(BlockState::Marked);
                 queue.enqueue(object);
                 if self.common.needs_log_bit {
-                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_as_unlogged::<VM>(object, Ordering::SeqCst);
+                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
                 }
             }
             object
@@ -337,13 +337,23 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         Block::NEXT_BLOCK_TABLE
     }
 
-    pub fn prepare(&mut self, _full_heap: bool) {
+    pub fn prepare(&mut self, full_heap: bool) {
         if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC {
             for chunk in self.chunk_map.all_chunks() {
                 side.bzero_metadata(chunk.start(), Chunk::BYTES);
             }
         } else {
             unimplemented!("in header mark bit is not supported");
+        }
+
+        if self.common.needs_log_bit && full_heap {
+            if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
+                for chunk in self.chunk_map.all_chunks() {
+                    side.bzero_metadata(chunk.start(), Chunk::BYTES);
+                }
+            } else {
+                unimplemented!("in header log bit is not supported");
+            }
         }
     }
 
