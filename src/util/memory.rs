@@ -7,6 +7,13 @@ use libc::{PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE};
 use std::io::{Error, Result};
 use sysinfo::{RefreshKind, System, SystemExt};
 
+#[allow(unused)]
+const PROT_RW:  libc::c_int = PROT_READ | PROT_WRITE;
+#[allow(unused)]
+const PROT_RX:  libc::c_int = PROT_READ | PROT_EXEC;
+#[allow(unused)]
+const PROT_RWX: libc::c_int = PROT_READ | PROT_WRITE | PROT_EXEC;
+
 #[cfg(target_os = "android")]
 pub const MAP_FIXED_NOREPLACE: libc::c_int = 0x100000;
 
@@ -42,7 +49,10 @@ pub fn set(start: Address, val: u8, len: usize) {
 /// may corrupt others' data.
 #[allow(clippy::let_and_return)] // Zeroing is not neceesary for some OS/s
 pub unsafe fn dzmmap(start: Address, size: usize, strategy: MmapStrategy) -> Result<()> {
-    let prot = PROT_READ | PROT_WRITE | PROT_EXEC;
+    #[cfg(feature = "code_space")]
+    let prot = PROT_RWX;
+    #[cfg(not(feature = "code_space"))]
+    let prot = PROT_RW;
     let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_FIXED;
     let ret = mmap_fixed(start, size, prot, flags, strategy);
     // We do not need to explicitly zero for Linux (memory is guaranteed to be zeroed)
@@ -82,7 +92,10 @@ pub enum MmapStrategy {
 /// This function will not overwrite existing memory mapping, and it will result Err if there is an existing mapping.
 #[allow(clippy::let_and_return)] // Zeroing is not neceesary for some OS/s
 pub fn dzmmap_noreplace(start: Address, size: usize, strategy: MmapStrategy) -> Result<()> {
-    let prot = PROT_READ | PROT_WRITE | PROT_EXEC;
+    #[cfg(feature = "code_space")]
+    let prot = PROT_RWX;
+    #[cfg(not(feature = "code_space"))]
+    let prot = PROT_RW;
     let flags = MMAP_FLAGS;
     let ret = mmap_fixed(start, size, prot, flags, strategy);
     // We do not need to explicitly zero for Linux (memory is guaranteed to be zeroed)
@@ -173,6 +186,7 @@ pub fn handle_mmap_error<VM: VMBinding>(error: Error, tls: VMThread) -> ! {
         }
         _ => {}
     }
+    println!("{}", get_process_memory_maps());
     panic!("Unexpected mmap failure: {:?}", error)
 }
 
@@ -181,7 +195,7 @@ pub fn handle_mmap_error<VM: VMBinding>(error: Error, tls: VMThread) -> ! {
 // Be very careful about using this function.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub(crate) fn panic_if_unmapped(start: Address, size: usize) {
-    let prot = PROT_READ | PROT_WRITE;
+    let prot = PROT_RW;
     let flags = MMAP_FLAGS;
     match mmap_fixed(start, size, prot, flags, MmapStrategy::Normal) {
         Ok(_) => panic!("{} of size {} is not mapped", start, size),
@@ -207,8 +221,12 @@ pub(crate) fn panic_if_unmapped(_start: Address, _size: usize) {
 
 /// Unprotect the given memory (in page granularity) to allow access (PROT_READ/WRITE/EXEC).
 pub fn munprotect(start: Address, size: usize) -> Result<()> {
+    #[cfg(feature = "code_space")]
+    let prot = PROT_RWX;
+    #[cfg(not(feature = "code_space"))]
+    let prot = PROT_RW;
     wrap_libc_call(
-        &|| unsafe { libc::mprotect(start.to_mut_ptr(), size, PROT_READ | PROT_WRITE | PROT_EXEC) },
+        &|| unsafe { libc::mprotect(start.to_mut_ptr(), size, prot) },
         0,
     )
 }
