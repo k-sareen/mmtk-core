@@ -234,13 +234,15 @@ impl<VM: VMBinding> VMSpace<VM> {
         }
     }
 
-    pub fn prepare(&mut self) {
+    pub fn prepare(&mut self, major_gc: bool) {
         self.mark_state.on_global_prepare::<VM>();
-        for external_pages in self.pr.get_external_pages().iter() {
-            self.mark_state.on_block_reset::<VM>(
-                external_pages.start,
-                external_pages.end - external_pages.start,
-            );
+        if major_gc {
+            for external_pages in self.pr.get_external_pages().iter() {
+                self.mark_state.on_block_reset::<VM>(
+                    external_pages.start,
+                    external_pages.end - external_pages.start,
+                );
+            }
         }
     }
 
@@ -261,6 +263,10 @@ impl<VM: VMBinding> VMSpace<VM> {
         );
         debug_assert!(self.in_space(object));
         if self.mark_state.test_and_mark::<VM>(object) {
+            if self.common.needs_log_bit {
+                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
+                    .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+            }
             queue.enqueue(object);
         }
         object

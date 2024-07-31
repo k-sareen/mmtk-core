@@ -12,11 +12,13 @@ use crate::policy::immix::ImmixSpace;
 use crate::policy::immix::TRACE_KIND_FAST;
 use crate::policy::sft::SFT;
 use crate::policy::space::Space;
+use crate::scheduler::GCWorker;
 use crate::util::copy::CopyConfig;
 use crate::util::copy::CopySelector;
 use crate::util::copy::CopySemantics;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::metadata::side_metadata::SideMetadataContext;
+use crate::util::rust_util::{likely, unlikely};
 use crate::util::statistics::counter::EventCounter;
 use crate::vm::ObjectModel;
 use crate::vm::VMBinding;
@@ -62,7 +64,17 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
                 CopySemantics::DefaultCopy => CopySelector::Immix(0),
                 _ => CopySelector::Unused,
             },
-            space_mapping: vec![(CopySelector::Immix(0), &self.immix.immix_space)],
+            space_mapping: {
+                let mut vec: Vec<(CopySelector, &'static (dyn Space<VM> + 'static))> = vec![];
+                if likely(self.common().has_zygote_space() || !self.common().is_zygote_process()) {
+                    vec.push((CopySelector::Immix(0), self.get_immix_space()));
+                } else {
+                    // We are the Zygote process and we have not created the ZygoteSpace yet so use
+                    // the ImmixSpace inside the ZygoteSpace
+                    vec.push((CopySelector::Immix(0), self.common().get_zygote().get_immix_space()));
+                }
+                vec
+            },
             constraints: &STICKY_IMMIX_CONSTRAINTS,
         }
     }
@@ -73,6 +85,24 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
 
     fn base_mut(&mut self) -> &mut crate::plan::global::BasePlan<Self::VM> {
         self.immix.base_mut()
+    }
+
+    fn prepare_worker(&self, worker: &mut GCWorker<Self::VM>) {
+        if unlikely(self.common().is_zygote_process() && !self.common().has_zygote_space()) {
+            // We are the Zygote process and we have not created the ZygoteSpace yet so use the
+            // ImmixSpace inside the ZygoteSpace
+            unsafe {
+                worker.get_copy_context_mut().immix[0].assume_init_mut()
+            }.rebind(self.common().get_zygote().get_immix_space());
+        } else {
+            // Either the runtime has a Zygote space or it is a command-line runtime
+            debug_assert!(
+                self.common().has_zygote_space()
+                    || (!self.common().is_zygote_process()
+                        && !*self.common().base.options.is_zygote_process)
+            );
+            unsafe { worker.get_copy_context_mut().immix[0].assume_init_mut() }.rebind(self.get_immix_space());
+        }
     }
 
     fn generational(
@@ -301,18 +331,6 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
                 .trace_object::<Q>(queue, object);
         }
 
-        if self.immix.common().get_nonmoving().in_space(object) {
-            trace!(
-                "MarkSweep object {} is being traced",
-                object
-            );
-            return self
-                .immix
-                .common()
-                .get_nonmoving()
-                .trace_object_nursery::<Q>(queue, object);
-        }
-
         object
     }
 }
@@ -379,6 +397,9 @@ impl<VM: VMBinding> StickyImmix<VM> {
                 > 1
         {
             // Forces full heap collection
+            true
+        } else if self.common().is_zygote_process() && !self.common().has_zygote_space() {
+            // Always do full-heap GCs if we are the Zygote process and don't have a Zygote space yet
             true
         } else {
             false

@@ -39,6 +39,18 @@ impl StatsForDefrag {
             collection_reserved_pages: plan.get_collection_reserved_pages(),
         }
     }
+
+    pub fn new_from_stats(
+        total_pages: usize,
+        reserved_pages: usize,
+        collection_reserved_pages: usize
+    ) -> Self {
+        Self {
+            total_pages,
+            reserved_pages,
+            collection_reserved_pages,
+        }
+    }
 }
 
 impl Defrag {

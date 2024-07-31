@@ -5,10 +5,11 @@ use std::sync::Mutex;
 use crate::util::ObjectReference;
 
 pub struct TreadMill {
-    from_space: Mutex<HashSet<ObjectReference>>,
-    to_space: Mutex<HashSet<ObjectReference>>,
-    collect_nursery: Mutex<HashSet<ObjectReference>>,
-    alloc_nursery: Mutex<HashSet<ObjectReference>>,
+    pub from_space: Mutex<HashSet<ObjectReference>>,
+    pub to_space: Mutex<HashSet<ObjectReference>>,
+    pub collect_nursery: Mutex<HashSet<ObjectReference>>,
+    pub alloc_nursery: Mutex<HashSet<ObjectReference>>,
+    pub zygote_space: Mutex<HashSet<ObjectReference>>,
 }
 
 impl std::fmt::Debug for TreadMill {
@@ -29,6 +30,7 @@ impl TreadMill {
             to_space: Mutex::new(HashSet::new()),
             collect_nursery: Mutex::new(HashSet::new()),
             alloc_nursery: Mutex::new(HashSet::new()),
+            zygote_space: Mutex::new(HashSet::new()),
         }
     }
 
@@ -98,6 +100,18 @@ impl TreadMill {
             swap(&mut self.from_space, &mut self.to_space);
             trace!("Flipped from_space and to_space");
         }
+    }
+
+    pub fn create_zygote_space(&mut self) {
+        assert!(
+            self.zygote_space.lock().unwrap().is_empty(),
+            "Large object zygote space is not empty before creation"
+        );
+        swap(&mut self.zygote_space, &mut self.to_space);
+    }
+
+    pub fn is_zygote_object(&self, object: ObjectReference) -> bool {
+        self.zygote_space.lock().unwrap().contains(&object)
     }
 }
 

@@ -704,7 +704,7 @@ mod gc_trigger_tests {
 // At some point, we may disallow this and all the options can only be set by command line.
 options! {
     // The plan to use.
-    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::Immix,
+    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::StickyImmix,
     /// Number of GC worker threads.
     threads:               usize                [env_var: true, command_line: true] [|v: &usize| *v > 0]    = num_cpus::get(),
     /// Enable an optimization that only scans the part of the stack that has changed since the last GC (not supported)
@@ -779,7 +779,11 @@ options! {
     /// Default to a fixed heap size of 0.5x physical memory.
     gc_trigger:             GCTriggerSelector    [env_var: true, command_line: true] [|v: &GCTriggerSelector| v.validate()] = GCTriggerSelector::FixedHeapSize((crate::util::memory::get_system_total_memory() as f64 * 0.5f64) as usize),
     /// Enable transparent hugepage support via madvise (only Linux is supported)
-    transparent_hugepages: bool                  [env_var: true, command_line: true]  [|v: &bool| !v || cfg!(target_os = "linux")] = false
+    transparent_hugepages: bool                  [env_var: true, command_line: true]  [|v: &bool| !v || cfg!(target_os = "linux")] = false,
+    /// Is the current runtime the Zygote process? Note that this value is only used once at the start
+    /// when creating the [`MMTK`] instance and is not maintained. The correct up-to-date value is
+    /// always in [`GlobalState`].
+    is_zygote_process:     bool                  [env_var: false, command_line: true] [always_valid] = false
 }
 
 #[cfg(test)]

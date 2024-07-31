@@ -124,7 +124,12 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
 
     fn prepare(&mut self, tls: VMWorkerThread) {
         let full_heap = !self.gen.is_current_gc_nursery();
-        self.gen.prepare(tls);
+        self.gen.prepare(
+            tls,
+            self.get_total_pages(),
+            self.get_reserved_pages(),
+            self.get_collection_reserved_pages(),
+        );
         if full_heap {
             self.immix_space.prepare(
                 full_heap,

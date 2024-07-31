@@ -24,10 +24,9 @@ rust_library {
     features: [
         "default",
         "vm_space",
+        "object_pinning",
         "set_unlog_bits_vm_space",
         "sticky_immix_non_moving_nursery",
-        // TODO(kunals): Remove after we can boot
-        "single_worker",
         "immix_zero_on_release", // debug only
         // "perf_counter",
     ],
@@ -59,7 +58,6 @@ rust_library {
         "libcrossbeam_queue",
         "libdowncast_rs",
         "libenum_map",
-        "libenv_logger",
         "libitertools",
         "liblazy_static",
         "liblibc",
@@ -81,6 +79,18 @@ rust_library {
         "libmmtk_macros",
         "libstrum_macros",
     ],
+    target: {
+        android: {
+            rustlibs: [
+                "libandroid_logger", // only on APEX builds
+            ],
+        },
+        host: {
+            rustlibs: [
+                "libenv_logger", // only on headless builds
+            ],
+        },
+    },
     apex_available: [
         "//apex_available:platform",
         "//apex_available:anyapex",

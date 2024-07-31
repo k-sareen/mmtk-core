@@ -63,8 +63,14 @@ impl<VM: VMBinding> Plan for MarkCompact<VM> {
         &self.common
     }
 
-    fn prepare(&mut self, _tls: VMWorkerThread) {
-        self.common.prepare(_tls, true);
+    fn prepare(&mut self, tls: VMWorkerThread) {
+        self.common.prepare(
+            tls,
+            true,
+            self.get_total_pages(),
+            self.get_reserved_pages(),
+            self.get_collection_reserved_pages(),
+        );
         self.mc_space.prepare();
     }
 

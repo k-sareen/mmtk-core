@@ -189,6 +189,15 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
         self.space
     }
 
+    /// Overwrite the ImmixSpace this allocator points to with the provided
+    /// ImmixSpace. This can be used, for example, in Android where we can use
+    /// the same allocator to point to a different ImmixSpace after creating the
+    /// Zygote space.
+    pub fn rebind(&mut self, space: &'static ImmixSpace<VM>) {
+        self.reset();
+        self.space = space;
+    }
+
     /// Large-object (larger than a line) bump allocation.
     fn overflow_alloc(&mut self, size: usize, align: usize, offset: usize) -> Address {
         trace!("{:?}: overflow_alloc", self.tls);

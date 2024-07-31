@@ -132,20 +132,6 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessModBuf<E> {
                 worker,
                 mmtk,
             )
-        } else {
-            // Flip the per-object unlogged bits to "unlogged" state for objects inside the bootimage
-            #[cfg(feature = "vm_space")]
-            {
-                use crate::policy::space::Space;
-
-                for obj in &self.modbuf {
-                    if mmtk.get_plan().base().vm_space.in_space(*obj) {
-                        <E::VM as VMBinding>::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                            .store_atomic::<E::VM, u8>(*obj, 1, None, Ordering::SeqCst);
-                    }
-                }
-
-            }
         }
     }
 }

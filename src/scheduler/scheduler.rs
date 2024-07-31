@@ -422,6 +422,7 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
 
                 // In stop-the-world GC, mutators cannot request for GC while GC is in progress.
                 // When we support concurrent GC, we should remove this assertion.
+                // TODO(kunals): I've seen this assertion fail before when scrolling the "Now in Android" app
                 assert!(
                     !goals.debug_is_requested(WorkerGoal::Gc),
                     "GC request sent to WorkerMonitor while GC is still in progress."

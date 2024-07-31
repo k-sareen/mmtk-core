@@ -6,12 +6,14 @@ use crate::mmtk::MMTK;
 use crate::plan::tracing::ObjectQueue;
 use crate::plan::Mutator;
 use crate::policy::gc_work::{DEFAULT_TRACE, PolicyTraceObject};
+use crate::policy::immix::{ImmixSpace, ImmixSpaceArgs};
 use crate::policy::immortalspace::ImmortalSpace;
 use crate::policy::marksweepspace::MarkSweepSpace;
 use crate::policy::largeobjectspace::LargeObjectSpace;
 use crate::policy::space::{PlanCreateSpaceArgs, Space};
 #[cfg(feature = "vm_space")]
 use crate::policy::vmspace::VMSpace;
+use crate::policy::zygotespace::ZygoteSpace;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::{CopyConfig, GCWorkerCopyContext};
@@ -27,6 +29,8 @@ use crate::util::options::Options;
 use crate::util::options::PlanSelector;
 use crate::util::statistics::stats::Stats;
 use crate::util::{conversions, ObjectReference};
+use crate::util::copy::CopySemantics;
+use crate::util::rust_util::unlikely;
 use crate::util::{VMMutatorThread, VMWorkerThread};
 use crate::vm::*;
 use downcast_rs::Downcast;
@@ -317,6 +321,9 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
             space.verify_side_metadata_sanity(&mut side_metadata_sanity_checker);
         })
     }
+
+    // TODO(kunals): Function that returns if the default space in a plan supports pinning or not.
+    // This will be required to support other plans in the MMTk ART port
 }
 
 impl_downcast!(Plan assoc VM);
@@ -501,7 +508,7 @@ impl<VM: VMBinding> BasePlan<VM> {
         VM::VMActivePlan::vm_trace_object::<Q>(queue, object, worker)
     }
 
-    pub fn prepare(&mut self, _tls: VMWorkerThread, _full_heap: bool) {
+    pub fn prepare(&mut self, _tls: VMWorkerThread, full_heap: bool) {
         #[cfg(feature = "code_space")]
         self.code_space.prepare();
         #[cfg(feature = "code_space")]
@@ -509,7 +516,7 @@ impl<VM: VMBinding> BasePlan<VM> {
         #[cfg(feature = "ro_space")]
         self.ro_space.prepare();
         #[cfg(feature = "vm_space")]
-        self.vm_space.prepare();
+        self.vm_space.prepare(full_heap);
     }
 
     pub fn release(&mut self, _tls: VMWorkerThread, _full_heap: bool) {
@@ -554,24 +561,39 @@ impl<VM: VMBinding> BasePlan<VM> {
     }
 }
 
-/**
-CommonPlan is for representing state and features used by _many_ plans, but that are not fundamental to _all_ plans.  Examples include the Large Object Space and an Immortal space.  Features that are fundamental to _all_ plans must be included in BasePlan.
-*/
+/// CommonPlan is for representing state and features used by _many_ plans, but that
+/// are not fundamental to _all_ plans.  Examples include the Large Object Space and
+/// an Immortal space.  Features that are fundamental to _all_ plans must be
+/// included in BasePlan.
 #[derive(HasSpaces, PlanTraceObject)]
 pub struct CommonPlan<VM: VMBinding> {
     #[space]
     pub immortal: ImmortalSpace<VM>,
     #[space]
     pub los: LargeObjectSpace<VM>,
-    // TODO: We should use a marksweep space for nonmoving.
     #[space]
-    pub nonmoving: MarkSweepSpace<VM>,
+    pub nonmoving: ImmortalSpace<VM>,
+    #[post_scan]
+    #[space]
+    #[copy_semantics(CopySemantics::DefaultCopy)]
+    pub zygote: Option<ZygoteSpace<VM>>,
     #[parent]
     pub base: BasePlan<VM>,
 }
 
 impl<VM: VMBinding> CommonPlan<VM> {
     pub fn new(mut args: CreateSpecificPlanArgs<VM>) -> CommonPlan<VM> {
+        let is_zygote_process = args.global_args.state.is_zygote_process();
+        let zygote = if is_zygote_process {
+            Some(ZygoteSpace::new(args.get_space_args(
+                "zygote",
+                true,
+                VMRequest::discontiguous(),
+            )))
+        } else {
+            None
+        };
+
         CommonPlan {
             immortal: ImmortalSpace::new(args.get_space_args(
                 "immortal",
@@ -582,20 +604,36 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 args.get_space_args("los", true, VMRequest::discontiguous()),
                 false,
             ),
-            nonmoving: MarkSweepSpace::new(args.get_space_args(
+            nonmoving: ImmortalSpace::new(args.get_space_args(
                 "nonmoving",
                 true,
                 VMRequest::discontiguous(),
             )),
+            zygote,
             base: BasePlan::new(args),
         }
     }
 
     pub fn get_used_pages(&self) -> usize {
+        let zygote_pages = if self.is_zygote_process() && !self.has_zygote_space() {
+            self.get_zygote().reserved_pages()
+        } else {
+            0
+        };
+
         self.immortal.reserved_pages()
             + self.los.reserved_pages()
             + self.nonmoving.reserved_pages()
             + self.base.get_used_pages()
+            + zygote_pages
+    }
+
+    pub fn is_zygote_process(&self) -> bool {
+        self.base.global_state.is_zygote_process()
+    }
+
+    pub fn has_zygote_space(&self) -> bool {
+        self.base.global_state.has_zygote_space()
     }
 
     pub fn trace_object<Q: ObjectQueue>(
@@ -614,15 +652,50 @@ impl<VM: VMBinding> CommonPlan<VM> {
         }
         if self.nonmoving.in_space(object) {
             trace!("trace_object: object in nonmoving space");
-            return self.nonmoving.trace_object::<Q, DEFAULT_TRACE>(queue, object, None, worker);
+            return self.nonmoving.trace_object(queue, object);
+        }
+        if self.zygote.in_space(object) {
+            if self.has_zygote_space() {
+                trace!("trace_object: object {} in frozen Zygote", object);
+                return object
+            } else {
+                assert!(
+                    self.is_zygote_process(),
+                    "Attempted to trace object {} in Zygote space in non-Zygote process",
+                    object,
+                );
+                return self.zygote.trace_object::<Q, DEFAULT_TRACE>(
+                    queue,
+                    object,
+                    Some(CopySemantics::DefaultCopy),
+                    worker,
+                );
+            }
         }
         self.base.trace_object::<Q>(queue, object, worker)
     }
 
-    pub fn prepare(&mut self, tls: VMWorkerThread, full_heap: bool) {
+    pub fn prepare(
+        &mut self,
+        tls: VMWorkerThread,
+        full_heap: bool,
+        total_pages: usize,
+        reserved_pages: usize,
+        collection_reserved_pages: usize,
+    ) {
         self.immortal.prepare();
         self.los.prepare(full_heap);
-        self.nonmoving.prepare(full_heap);
+        self.nonmoving.prepare();
+        if let Some(zygote_space) = self.zygote.as_mut() {
+            zygote_space.prepare(
+                full_heap,
+                crate::policy::immix::defrag::StatsForDefrag::new_from_stats(
+                    total_pages,
+                    reserved_pages,
+                    collection_reserved_pages,
+                ),
+            );
+        }
         self.base.prepare(tls, full_heap)
     }
 
@@ -630,6 +703,20 @@ impl<VM: VMBinding> CommonPlan<VM> {
         self.immortal.release();
         self.los.release(full_heap);
         self.nonmoving.release();
+        if unlikely(self.is_zygote_process() && !self.has_zygote_space()) {
+            if let Some(zygote_space) = self.zygote.as_mut() {
+                let is_pre_first_zygote_fork_gc =
+                    self.base.global_state.is_pre_first_zygote_fork_gc();
+                zygote_space.release(
+                    full_heap,
+                    is_pre_first_zygote_fork_gc,
+                );
+
+                if is_pre_first_zygote_fork_gc {
+                    self.base.global_state.set_has_zygote_space(true);
+                }
+            }
+        }
         self.base.release(tls, full_heap)
     }
 
@@ -641,8 +728,16 @@ impl<VM: VMBinding> CommonPlan<VM> {
         &self.los
     }
 
-    pub fn get_nonmoving(&self) -> &MarkSweepSpace<VM> {
+    pub fn get_nonmoving(&self) -> &ImmortalSpace<VM> {
         &self.nonmoving
+    }
+
+    pub fn get_zygote(&self) -> &ZygoteSpace<VM> {
+        assert!(
+            self.is_zygote_process() || self.has_zygote_space(),
+            "Can't call get_zygote() for non-Zygote processes!"
+        );
+        self.zygote.as_ref().unwrap()
     }
 }
 

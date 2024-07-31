@@ -138,15 +138,18 @@ impl<VM: VMBinding> MMTK<VM> {
         crate::policy::sft_map::SFTRefStorage::pre_use_check();
         SFT_MAP.initialize_once(&create_sft_map);
 
+        let is_zygote_process = *options.is_zygote_process;
+        // XXX(kunals): Only have four GC threads at max on the device
         let num_workers = if cfg!(feature = "single_worker") {
             1
         } else {
-            *options.threads
+            std::cmp::min(*options.threads, 4)
         };
 
         let scheduler = GCWorkScheduler::new(num_workers, (*options.thread_affinity).clone());
 
         let state = Arc::new(GlobalState::default());
+        state.set_is_zygote_process(is_zygote_process);
 
         let gc_requester = Arc::new(GCRequester::new(scheduler.clone()));
 
@@ -400,6 +403,30 @@ impl<VM: VMBinding> MMTK<VM> {
         }
     }
 
+    pub fn is_zygote_process(&self) -> bool {
+        self.state.is_zygote_process()
+    }
+
+    pub fn set_is_zygote_process(&self, is_zygote_process: bool) {
+        self.state.set_is_zygote_process(is_zygote_process)
+    }
+
+    pub fn has_zygote_space(&self) -> bool {
+        self.state.has_zygote_space()
+    }
+
+    pub fn set_has_zygote_space(&self, has_zygote_space: bool) {
+        self.state.set_has_zygote_space(has_zygote_space)
+    }
+
+    pub fn is_pre_first_zygote_fork_gc(&self) -> bool {
+        self.state.is_pre_first_zygote_fork_gc()
+    }
+
+    pub fn set_is_pre_first_zygote_fork_gc(&self, is_pre_first_zygote_fork_gc: bool) {
+        self.state.set_is_pre_first_zygote_fork_gc(is_pre_first_zygote_fork_gc)
+    }
+
     /// The application code has requested a collection. This is just a GC hint, and
     /// we may ignore it.
     ///
@@ -433,6 +460,37 @@ impl<VM: VMBinding> MMTK<VM> {
             self.gc_requester.request();
             VM::VMCollection::block_for_gc(tls);
         }
+    }
+
+    /// Trigger the pre-first Zygote fork garbage collection. This GC will perform a full defrag GC to
+    /// try to compact the Zygote space as much as possible.
+    ///
+    /// Arguments:
+    /// * `tls`: The thread that triggers this collection request.
+    pub fn handle_pre_first_zygote_fork_collection_request(
+        &self,
+        tls: VMMutatorThread
+    ) {
+        use crate::vm::Collection;
+        if !self.get_plan().constraints().collects_garbage {
+            warn!("User attempted a collection request, but the plan can not do GC. The request is ignored.");
+            return;
+        }
+
+        if let Some(gen) = self.get_plan().generational() {
+            gen.force_full_heap_collection();
+        }
+
+        self.state.user_triggered_collection.store(true, Ordering::Relaxed);
+
+        // Inform MMTk that this is the pre-first Zygote fork GC
+        self.set_is_pre_first_zygote_fork_gc(true);
+        self.gc_requester.request();
+
+        // Now block the current mutator thread to perform a GC
+        VM::VMCollection::block_for_gc(tls);
+
+        self.set_is_pre_first_zygote_fork_gc(false);
     }
 
     /// MMTK has requested stop-the-world activity (e.g., stw within a concurrent gc).

@@ -263,6 +263,31 @@ pub fn get_process_memory_maps() -> String {
     data
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub fn get_process_memory_maps_prealloc(data: &mut String) {
+    // print map
+    use std::fs::File;
+    use std::io::Read;
+    let mut f = File::open("/proc/self/maps").unwrap();
+    f.read_to_string(data).unwrap();
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub fn get_proc_meminfo(data: &mut String) {
+    use std::fs::File;
+    use std::io::Read;
+    let mut f = File::open("/proc/meminfo").unwrap();
+    f.read_to_string(data).unwrap();
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub fn get_proc_self_status(data: &mut String) {
+    use std::fs::File;
+    use std::io::Read;
+    let mut f = File::open("/proc/self/status").unwrap();
+    f.read_to_string(data).unwrap();
+}
+
 /// Returns the total physical memory for the system in bytes.
 pub(crate) fn get_system_total_memory() -> u64 {
     // TODO: Note that if we want to get system info somewhere else in the future, we should

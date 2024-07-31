@@ -422,4 +422,43 @@ impl<VM: VMBinding> FreeListPageResource<VM> {
             }
         }
     }
+
+    // pub fn iterate_allocated_regions(&self) -> impl Iterator<Item = (Address, usize)> + '_ {
+    //     struct Iter<'a, VM: VMBinding> {
+    //         pr: &'a FreeListPageResource<VM>,
+    //         discontiguous_start: Address,
+    //     }
+    //     impl<VM: VMBinding> Iterator for Iter<'_, VM> {
+    //         type Item = (Address, usize);
+    //         fn next(&mut self) -> Option<Self::Item> {
+    //             if self.discontiguous_start.is_zero() {
+    //                 None
+    //             } else {
+    //                 let start = self.discontiguous_start;
+    //                 self.discontiguous_start = self.pr.vm_map().get_next_contiguous_region(start);
+    //                 let size = self.pr.vm_map().get_contiguous_region_size(start);
+    //                 Some((start, size))
+    //             }
+    //         }
+    //     }
+    //     let sync = self.sync.lock().unwrap();
+    //     match sync.conditional {
+    //         MonotonePageResourceConditional::Contiguous { start, .. } => {
+    //             let cursor = sync.cursor.align_up(BYTES_IN_CHUNK);
+    //             Iter {
+    //                 pr: self,
+    //                 contiguous_space: Some(start..cursor),
+    //                 discontiguous_start: Address::ZERO,
+    //             }
+    //         }
+    //         MonotonePageResourceConditional::Discontiguous => {
+    //             let discontiguous_start = self.common.get_head_discontiguous_region();
+    //             Iter {
+    //                 pr: self,
+    //                 contiguous_space: None,
+    //                 discontiguous_start,
+    //             }
+    //         }
+    //     }
+    //  }
 }

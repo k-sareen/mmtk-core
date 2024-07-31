@@ -64,12 +64,24 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
     }
 
     /// Prepare Gen. This should be called by a single thread in GC prepare work.
-    pub fn prepare(&mut self, tls: VMWorkerThread) {
+    pub fn prepare(
+        &mut self,
+        tls: VMWorkerThread,
+        total_pages: usize,
+        reserved_pages: usize,
+        collection_reserved_pages: usize,
+    ) {
         let full_heap = !self.is_current_gc_nursery();
         if full_heap {
             self.full_heap_gc_count.lock().unwrap().inc();
         }
-        self.common.prepare(tls, full_heap);
+        self.common.prepare(
+            tls,
+            full_heap,
+            total_pages,
+            reserved_pages,
+            collection_reserved_pages,
+        );
         self.nursery.prepare(true);
         self.nursery
             .set_copy_for_sft_trace(Some(CopySemantics::PromoteToMature));
@@ -183,6 +195,9 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
             true
         } else if Self::virtual_memory_exhausted(plan.generational().unwrap()) {
             trace!("full heap: virtual memory exhausted");
+            true
+        } else if self.common.is_zygote_process() && !self.common.has_zygote_space() {
+            // Always do full-heap GCs if we are the Zygote process and don't have a Zygote space yet
             true
         } else {
             // We use an Appel-style nursery. The default GC (even for a "heap-full" collection)

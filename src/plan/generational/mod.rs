@@ -39,7 +39,12 @@ pub(super) mod global;
 ///  - Set `ACTIVE_BARRIER` to `BarrierSelector::ObjectBarrier`.
 pub const ACTIVE_BARRIER: BarrierSelector = BarrierSelector::ObjectBarrier;
 /// Full heap collection as nursery GC.
+#[cfg(target_pointer_width = "64")]
 pub const FULL_NURSERY_GC: bool = false;
+// XXX(kunals): For 32-bit architectures, we always do a full heap GC since the
+// write barrier is not implemented
+#[cfg(target_pointer_width = "32")]
+pub const FULL_NURSERY_GC: bool = true;
 
 /// Constraints for generational plans. Each generational plan should overwrite based on this constant.
 pub const GEN_CONSTRAINTS: PlanConstraints = PlanConstraints {

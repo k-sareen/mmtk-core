@@ -8,6 +8,7 @@ use crate::policy::space::{CommonSpace, Space};
 use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::heap::{FreeListPageResource, PageResource};
 use crate::util::metadata;
+use crate::util::metadata::mark_bit::MarkState;
 use crate::util::opaque_pointer::*;
 use crate::util::treadmill::TreadMill;
 use crate::util::{Address, ObjectReference};
@@ -25,7 +26,7 @@ const LOS_BIT_MASK: u8 = 0b11;
 pub struct LargeObjectSpace<VM: VMBinding> {
     common: CommonSpace<VM>,
     pr: FreeListPageResource<VM>,
-    mark_state: u8,
+    mark_state: MarkState,
     in_nursery_gc: bool,
     treadmill: TreadMill,
 }
@@ -35,7 +36,7 @@ impl<VM: VMBinding> SFT for LargeObjectSpace<VM> {
         self.get_name()
     }
     fn is_live(&self, object: ObjectReference) -> bool {
-        self.test_mark_bit(object, self.mark_state)
+        self.is_marked(object)
     }
     #[cfg(feature = "object_pinning")]
     fn pin_object(&self, _object: ObjectReference) -> bool {
@@ -57,27 +58,7 @@ impl<VM: VMBinding> SFT for LargeObjectSpace<VM> {
         true
     }
     fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool) {
-        let old_value = VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
-            object,
-            None,
-            Ordering::SeqCst,
-        );
-        let mut new_value = (old_value & (!LOS_BIT_MASK)) | self.mark_state;
-        if alloc {
-            new_value |= NURSERY_BIT;
-        }
-        VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.store_atomic::<VM, u8>(
-            object,
-            new_value,
-            None,
-            Ordering::SeqCst,
-        );
-
-        // If this object is freshly allocated, we do not set it as unlogged
-        if !alloc && self.common.needs_log_bit {
-            VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_as_unlogged::<VM>(object, Ordering::SeqCst);
-        }
-
+        self.mark_state.on_object_metadata_initialization::<VM>(object);
         #[cfg(feature = "vo_bit")]
         crate::util::metadata::vo_bit::set_vo_bit::<VM>(object);
         self.treadmill.add_to_treadmill(object, alloc);
@@ -148,7 +129,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         let common = CommonSpace::new(args.into_policy_args(
             false,
             false,
-            metadata::extract_side_metadata(&[*VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC]),
+            metadata::extract_side_metadata(&[*VM::VMObjectModel::LOCAL_MARK_BIT_SPEC]),
         ));
         let mut pr = if is_discontiguous {
             FreeListPageResource::new_discontiguous(vm_map)
@@ -159,28 +140,51 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         LargeObjectSpace {
             pr,
             common,
-            mark_state: 0,
+            mark_state: MarkState::new(),
             in_nursery_gc: false,
             treadmill: TreadMill::new(),
         }
     }
 
     pub fn prepare(&mut self, full_heap: bool) {
+        self.mark_state.on_global_prepare::<VM>();
         if full_heap {
             debug_assert!(self.treadmill.is_from_space_empty());
-            self.mark_state = MARK_BIT - self.mark_state;
+            let mut guard = self.treadmill.to_space.lock().unwrap();
+            let to_space_objs: Vec<ObjectReference> = guard.iter().copied().collect();
+            guard.clear();
+            drop(guard);
+            debug_assert!(self.treadmill.is_to_space_empty());
+            for object in &to_space_objs {
+                self.mark_state.clear::<VM>(*object);
+                self.treadmill.add_to_treadmill(*object, true);
+            }
+
+            if self.has_zygote_space() {
+                self.reset_mark_zygote_objects();
+            }
         }
+
         self.treadmill.flip(full_heap);
         self.in_nursery_gc = !full_heap;
     }
 
     pub fn release(&mut self, full_heap: bool) {
-        self.sweep_large_pages(true);
+        self.mark_state.on_global_release::<VM>();
+
+        self.sweep_large_objects(full_heap);
         debug_assert!(self.treadmill.is_nursery_empty());
-        if full_heap {
-            self.sweep_large_pages(false);
+        debug_assert!(self.treadmill.is_from_space_empty());
+
+        if self.common().global_state.is_pre_first_zygote_fork_gc() {
+            assert!(
+                self.is_zygote_process(),
+                "Cannot create large object zygote space for non-Zygote process!",
+            );
+            self.create_zygote_space();
         }
     }
+
     // Allow nested-if for this function to make it clear that test_and_mark() is only executed
     // for the outer condition is met.
     #[allow(clippy::collapsible_if)]
@@ -197,6 +201,8 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             object
         );
         let nursery_object = self.is_in_nursery(object);
+        let is_zygote_object = self.has_zygote_space()
+            && self.treadmill.is_zygote_object(object);
         trace!(
             "LOS object {} {} a nursery object",
             object,
@@ -205,9 +211,11 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         if !self.in_nursery_gc || nursery_object {
             // Note that test_and_mark() has side effects of
             // clearing nursery bit/moving objects out of logical nursery
-            if self.test_and_mark(object, self.mark_state) {
+            if self.mark_state.test_and_mark::<VM>(object) {
                 trace!("LOS object {} is being marked now", object);
-                self.treadmill.copy(object, nursery_object);
+                if !is_zygote_object {
+                    self.treadmill.copy(object, nursery_object);
+                }
                 // We just moved the object out of the logical nursery, mark it as unlogged.
                 // We also set the unlog bit for mature objects to ensure that
                 // any modifications to them are logged
@@ -215,7 +223,9 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
                     VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
                         .mark_as_unlogged::<VM>(object, Ordering::SeqCst);
                 }
-                queue.enqueue(object);
+                if !is_zygote_object || (!self.in_nursery_gc && is_zygote_object) {
+                    queue.enqueue(object);
+                }
             } else {
                 trace!(
                     "LOS object {} is not being marked now, it was marked before",
@@ -226,7 +236,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         object
     }
 
-    fn sweep_large_pages(&mut self, sweep_nursery: bool) {
+    fn sweep_large_objects(&mut self, full_heap: bool) {
         let sweep = |object: ObjectReference| {
             #[cfg(feature = "vo_bit")]
             crate::util::metadata::vo_bit::unset_vo_bit::<VM>(object);
@@ -237,11 +247,12 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             self.pr
                 .release_pages(get_super_page(object.to_object_start::<VM>()));
         };
-        if sweep_nursery {
-            for object in self.treadmill.collect_nursery() {
-                sweep(object);
-            }
-        } else {
+
+        for object in self.treadmill.collect_nursery() {
+            sweep(object);
+        }
+
+        if full_heap {
             for object in self.treadmill.collect() {
                 sweep(object)
             }
@@ -253,61 +264,33 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         self.acquire(tls, pages)
     }
 
-    /// Test if the object's mark bit is the same as the given value. If it is not the same,
-    /// the method will attemp to mark the object and clear its nursery bit. If the attempt
-    /// succeeds, the method will return true, meaning the object is marked by this invocation.
-    /// Otherwise, it returns false.
-    fn test_and_mark(&self, object: ObjectReference, value: u8) -> bool {
-        loop {
-            let mask = if self.in_nursery_gc {
-                LOS_BIT_MASK
-            } else {
-                MARK_BIT
-            };
-            let old_value = VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
-                object,
-                None,
-                Ordering::SeqCst,
-            );
-            let mark_bit = old_value & mask;
-            if mark_bit == value {
-                return false;
-            }
-            // using LOS_BIT_MASK have side effects of clearing nursery bit
-            if VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC
-                .compare_exchange_metadata::<VM, u8>(
-                    object,
-                    old_value,
-                    old_value & !LOS_BIT_MASK | value,
-                    None,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_ok()
-            {
-                break;
-            }
-        }
-        true
-    }
-
-    fn test_mark_bit(&self, object: ObjectReference, value: u8) -> bool {
-        VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
-            object,
-            None,
-            Ordering::SeqCst,
-        ) & MARK_BIT
-            == value
+    /// Check if a given object is marked
+    fn is_marked(&self, object: ObjectReference) -> bool {
+        self.mark_state.is_marked::<VM>(object)
     }
 
     /// Check if a given object is in nursery
     fn is_in_nursery(&self, object: ObjectReference) -> bool {
-        VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
-            object,
-            None,
-            Ordering::Relaxed,
-        ) & NURSERY_BIT
-            == NURSERY_BIT
+        !self.is_marked(object)
+    }
+
+    fn is_zygote_process(&self) -> bool {
+        self.common().global_state.is_zygote_process()
+    }
+
+    fn has_zygote_space(&self) -> bool {
+        self.common().global_state.has_zygote_space()
+    }
+
+    fn create_zygote_space(&mut self) {
+        self.treadmill.create_zygote_space();
+    }
+
+    fn reset_mark_zygote_objects(&self) {
+        let zygote_space = self.treadmill.zygote_space.lock().unwrap();
+        for object in &(*zygote_space) {
+            self.mark_state.clear::<VM>(*object);
+        }
     }
 }
 

@@ -172,6 +172,25 @@ impl<VM: VMBinding> GCWorkerCopyContext<VM> {
         }
     }
 
+    /// Freeze the Zygote space and set the immix_space for the immix allocator
+    /// TODO(kunals): Perhaps use this method to set the immix allocator after the first Zygote fork
+    // pub fn freeze_zygote_space(&mut self, immix_space: &'static ImmixSpace<VM>) {
+    //     for (_, selector) in self.config.copy_mapping.iter() {
+    //         match selector {
+    //             CopySelector::CopySpace(index) => {
+    //                 unsafe { self.copy[*index as usize].assume_init_mut() }.freeze_zygote_space(immix_space)
+    //             }
+    //             CopySelector::Immix(index) => {
+    //                 unsafe { self.immix[*index as usize].assume_init_mut() }.freeze_zygote_space(immix_space)
+    //             }
+    //             CopySelector::ImmixHybrid(index) => {
+    //                 unsafe { self.immix_hybrid[*index as usize].assume_init_mut() }.freeze_zygote_space(immix_space)
+    //             }
+    //             CopySelector::Unused => {}
+    //         }
+    //     }
+    // }
+
     /// Create a GCWorkerCopyContext based on the configuration for a copying plan.
     ///
     /// Arguments:

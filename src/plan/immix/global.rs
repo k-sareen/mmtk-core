@@ -83,7 +83,13 @@ impl<VM: VMBinding> Plan for Immix<VM> {
     }
 
     fn prepare(&mut self, tls: VMWorkerThread) {
-        self.common.prepare(tls, true);
+        self.common.prepare(
+            tls,
+            true,
+            self.get_total_pages(),
+            self.get_reserved_pages(),
+            self.get_collection_reserved_pages(),
+        );
         self.immix_space.prepare(
             true,
             crate::policy::immix::defrag::StatsForDefrag::new(self),

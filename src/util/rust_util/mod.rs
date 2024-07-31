@@ -21,10 +21,12 @@ use core::intrinsics::{likely, unlikely};
 // [1]: https://github.com/rust-lang/hashbrown/blob/a41bd76de0a53838725b997c6085e024c47a0455/src/raw/mod.rs#L48-L70
 // [2]: https://users.rust-lang.org/t/compiler-hint-for-unlikely-likely-for-if-branches/62102/3
 #[cfg(not(feature = "nightly"))]
+#[inline]
 #[cold]
 fn cold() {}
 
 #[cfg(not(feature = "nightly"))]
+#[inline]
 pub fn likely(b: bool) -> bool {
     if !b {
         cold();
@@ -32,6 +34,7 @@ pub fn likely(b: bool) -> bool {
     b
 }
 #[cfg(not(feature = "nightly"))]
+#[inline]
 pub fn unlikely(b: bool) -> bool {
     if b {
         cold();

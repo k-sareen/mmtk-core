@@ -425,8 +425,15 @@ pub(crate) fn create_allocator_mapping(
 
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.
         map[AllocationSemantics::NonMoving] =
-            AllocatorSelector::FreeList(reserved.n_free_list);
-        reserved.n_free_list += 1;
+            AllocatorSelector::BumpPointer(reserved.n_bump_pointer);
+        reserved.n_bump_pointer += 1;
+
+        // TODO(kunals): This required if we want to support plans other than Immix-style ones for ART
+        // map[AllocationSemantics::Zygote] =
+        //     AllocatorSelector::Immix(reserved.n_immix);
+        // XXX(kunals): We increment the number of ImmixAllocators regardless since the default
+        // number of reserved ImmixAllocators starts from 0 for both Immix and StickyImmix
+        reserved.n_immix += 1;
     }
 
     reserved.validate();
@@ -490,10 +497,19 @@ pub(crate) fn create_space_mapping<VM: VMBinding>(
         reserved.n_large_object += 1;
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.
         vec.push((
-            AllocatorSelector::FreeList(reserved.n_free_list),
+            AllocatorSelector::BumpPointer(reserved.n_bump_pointer),
             plan.common().get_nonmoving(),
         ));
-        reserved.n_free_list += 1;
+        reserved.n_bump_pointer += 1;
+        if plan.common().is_zygote_process() && !plan.common().has_zygote_space() {
+            vec.push((
+                AllocatorSelector::Immix(reserved.n_immix),
+                plan.common().get_zygote().get_immix_space(),
+            ));
+        }
+        // XXX(kunals): We increment the number of ImmixAllocators regardless since the default
+        // number of reserved ImmixAllocators starts from 0 for both Immix and StickyImmix
+        reserved.n_immix += 1;
     }
 
     reserved.validate();

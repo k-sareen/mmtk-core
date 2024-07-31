@@ -49,7 +49,13 @@ impl<VM: VMBinding> Plan for PageProtect<VM> {
     }
 
     fn prepare(&mut self, tls: VMWorkerThread) {
-        self.common.prepare(tls, true);
+        self.common.prepare(
+            tls,
+            true,
+            self.get_total_pages(),
+            self.get_reserved_pages(),
+            self.get_collection_reserved_pages(),
+        );
         self.space.prepare(true);
     }
 

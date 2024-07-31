@@ -558,6 +558,19 @@ pub fn handle_user_collection_request<VM: VMBinding>(
     mmtk.handle_user_collection_request(tls, force, exhaustive);
 }
 
+/// Trigger the pre-first Zygote fork garbage collection. This GC will perform a full defrag GC to
+/// try to compact the Zygote space as much as possible.
+///
+/// Arguments:
+/// * `mmtk`: A reference to an MMTk instance.
+/// * `tls`: The thread that triggers this collection request.
+pub fn handle_pre_first_zygote_fork_collection_request<VM: VMBinding>(
+    mmtk: &MMTK<VM>,
+    tls: VMMutatorThread
+) {
+    mmtk.handle_pre_first_zygote_fork_collection_request(tls);
+}
+
 /// Is the object alive?
 ///
 /// Arguments:

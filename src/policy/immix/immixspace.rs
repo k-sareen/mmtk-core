@@ -20,6 +20,7 @@ use crate::util::metadata::mark_bit::MarkState;
 use crate::util::metadata::vo_bit;
 use crate::util::metadata::{self, MetadataSpec};
 use crate::util::object_forwarding;
+use crate::util::rust_util::unlikely;
 use crate::util::{Address, ObjectReference};
 use crate::vm::*;
 use crate::{
@@ -54,7 +55,7 @@ pub struct ImmixSpace<VM: VMBinding> {
     /// Work packet scheduler
     scheduler: Arc<GCWorkScheduler<VM>>,
     /// Some settings for this space
-    space_args: ImmixSpaceArgs,
+    pub space_args: ImmixSpaceArgs,
 }
 
 /// Some arguments for Immix Space.
@@ -188,7 +189,7 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for ImmixSpace
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
         debug_assert!(!object.is_null());
-        if KIND == TRACE_KIND_TRANSITIVE_PIN {
+        if KIND == TRACE_KIND_TRANSITIVE_PIN || KIND == TRACE_KIND_FAST {
             self.trace_object_without_moving(queue, object)
         } else if KIND == TRACE_KIND_DEFRAG {
             if Block::containing::<VM>(object).is_defrag_source() {
@@ -208,8 +209,6 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for ImmixSpace
             } else {
                 self.trace_object_without_moving(queue, object)
             }
-        } else if KIND == TRACE_KIND_FAST {
-            self.trace_object_without_moving(queue, object)
         } else {
             unreachable!()
         }
@@ -354,7 +353,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     }
 
     /// Get work packet scheduler
-    fn scheduler(&self) -> &GCWorkScheduler<VM> {
+    pub fn scheduler(&self) -> &GCWorkScheduler<VM> {
         &self.scheduler
     }
 
@@ -792,7 +791,7 @@ impl<VM: VMBinding> PrepareBlockState<VM> {
 }
 
 impl<VM: VMBinding> GCWork<VM> for PrepareBlockState<VM> {
-    fn do_work(&mut self, _worker: &mut GCWorker<VM>, _mmtk: &'static MMTK<VM>) {
+    fn do_work(&mut self, _worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
         // Clear object mark table for this chunk
         self.reset_object_mark();
         // Iterate over all blocks in this chunk
@@ -806,6 +805,10 @@ impl<VM: VMBinding> GCWork<VM> for PrepareBlockState<VM> {
             let is_defrag_source = if !super::DEFRAG {
                 // Do not set any block as defrag source if defrag is disabled.
                 false
+            } else if unlikely(mmtk.is_pre_first_zygote_fork_gc()) {
+                // We defrag all blocks for the pre-first Zygote fork GC to
+                // compact the Zygote space as much as possible
+                true
             } else if super::DEFRAG_EVERY_BLOCK {
                 // Set every block as defrag source if so desired.
                 true
@@ -928,6 +931,11 @@ impl<VM: VMBinding> ImmixCopyContext<VM> {
 
     fn get_space(&self) -> &ImmixSpace<VM> {
         self.allocator.immix_space()
+    }
+
+    pub fn rebind(&mut self, space: &ImmixSpace<VM>) {
+        self.allocator
+            .rebind(unsafe { &*{ space as *const _ } });
     }
 }
 

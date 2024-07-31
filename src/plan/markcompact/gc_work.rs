@@ -46,7 +46,13 @@ impl<VM: VMBinding> GCWork<VM> for UpdateReferences<VM> {
         // Prepare common and base spaces for the 2nd round of transitive closure
         let plan_mut = unsafe { &mut *(self.plan as *mut MarkCompact<VM>) };
         plan_mut.common.release(worker.tls, true);
-        plan_mut.common.prepare(worker.tls, true);
+        plan_mut.common.prepare(
+            worker.tls,
+            true,
+            mmtk.get_plan().get_total_pages(),
+            mmtk.get_plan().get_reserved_pages(),
+            mmtk.get_plan().get_collection_reserved_pages(),
+        );
         #[cfg(feature = "extreme_assertions")]
         mmtk.edge_logger.reset();
 
