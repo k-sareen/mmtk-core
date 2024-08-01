@@ -26,7 +26,6 @@ rust_library {
         "vm_space",
         "object_pinning",
         "set_unlog_bits_vm_space",
-        "sticky_immix_non_moving_nursery",
         "immix_zero_on_release", // debug only
         // "perf_counter",
     ],
