@@ -3,13 +3,6 @@
 
 
 
-genrule {
-    name: "copy_mmtk_build_out",
-    srcs: ["out/*"],
-    cmd: "cp $(in) $(genDir)",
-    out: ["built.rs"],
-}
-
 rust_library {
     name: "libmmtk",
     host_supported: true,
@@ -18,7 +11,6 @@ rust_library {
     cargo_pkg_version: "0.24.0",
     srcs: [
         "src/lib.rs",
-        ":copy_mmtk_build_out",
     ],
     edition: "2021",
     features: [
@@ -106,7 +98,6 @@ rust_proc_macro {
     cargo_pkg_version: "0.24.0",
     srcs: [
         "macros/src/lib.rs",
-        ":copy_mmtk_build_out",
     ],
     edition: "2021",
     rustlibs: [
