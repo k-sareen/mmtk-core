@@ -777,8 +777,10 @@ options! {
     // XXX: This option is currently only supported on Linux.
     thread_affinity:        AffinityKind         [env_var: true, command_line: true] [|v: &AffinityKind| v.validate()] = AffinityKind::OsDefault,
     /// Set the GC trigger. This defines the heap size and how MMTk triggers a GC.
-    /// Default to a fixed heap size of 0.5x physical memory.
-    gc_trigger:             GCTriggerSelector    [env_var: true, command_line: true] [|v: &GCTriggerSelector| v.validate()] = GCTriggerSelector::FixedHeapSize((crate::util::memory::get_system_total_memory() as f64 * 0.5f64) as usize),
+    /// Default to a fixed heap size of 256 MB
+    /// ANDROID-CHANGED: Changed to a default of 256 MB from 0.5x total physical memory because Android
+    ///                  does not allow reading /proc files when running with SELinux turned on
+    gc_trigger:             GCTriggerSelector    [env_var: true, command_line: true] [|v: &GCTriggerSelector| v.validate()] = GCTriggerSelector::FixedHeapSize(256 * 1024 * 1024),
     /// Enable transparent hugepage support via madvise (only Linux is supported)
     transparent_hugepages: bool                  [env_var: true, command_line: true]  [|v: &bool| !v || cfg!(target_os = "linux")] = false,
     /// Is the current runtime the Zygote process? Note that this value is only used once at the start
