@@ -148,10 +148,18 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
     pub fn new(
         args: crate::policy::space::PlanCreateSpaceArgs<VM>,
     ) -> Self {
-        let immix_space_args = ImmixSpaceArgs {
-            unlog_object_when_traced: true,
-            reset_log_bit_in_major_gc: true,
-            mixed_age: false,
+        let immix_space_args = if args.constraints.needs_log_bit {
+            ImmixSpaceArgs {
+                unlog_object_when_traced: true,
+                reset_log_bit_in_major_gc: true,
+                mixed_age: false,
+            }
+        } else {
+            ImmixSpaceArgs {
+                unlog_object_when_traced: false,
+                reset_log_bit_in_major_gc: false,
+                mixed_age: false,
+            }
         };
 
         ZygoteSpace {
@@ -215,8 +223,10 @@ impl<VM: VMBinding> PolicyTraceObject<VM> for ZygoteSpace<VM> {
         if likely(self.created_zygote_space) {
             // The Zygote space has been created -- mark and enqueue the object for scanning
             if self.immix_space.mark_state.test_and_mark::<VM>(object) {
-                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                    .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+                if self.common().needs_log_bit {
+                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
+                        .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+                }
                 queue.enqueue(object);
             }
             object

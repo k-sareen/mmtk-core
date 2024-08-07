@@ -27,6 +27,7 @@ pub enum NurseryZeroingOptions {
 }
 
 /// Select a GC plan for MMTk.
+#[repr(C)]
 #[derive(Copy, Clone, EnumString, Debug)]
 pub enum PlanSelector {
     /// Allocation only without a collector. This is usually used for debugging.
@@ -704,7 +705,7 @@ mod gc_trigger_tests {
 // At some point, we may disallow this and all the options can only be set by command line.
 options! {
     // The plan to use.
-    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::StickyImmix,
+    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::Immix,
     /// Number of GC worker threads.
     threads:               usize                [env_var: true, command_line: true] [|v: &usize| *v > 0]    = num_cpus::get(),
     /// Enable an optimization that only scans the part of the stack that has changed since the last GC (not supported)

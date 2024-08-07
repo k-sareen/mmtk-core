@@ -1,4 +1,5 @@
 use super::Immix;
+use crate::plan::global::Plan;
 use crate::plan::mutator_context::create_allocator_mapping;
 use crate::plan::mutator_context::create_space_mapping;
 use crate::plan::mutator_context::unreachable_prepare_func;
@@ -8,6 +9,7 @@ use crate::plan::mutator_context::ReservedAllocators;
 use crate::plan::AllocationSemantics;
 use crate::util::alloc::allocators::{AllocatorSelector, Allocators};
 use crate::util::alloc::ImmixAllocator;
+use crate::util::rust_util::{likely,unlikely};
 use crate::vm::VMBinding;
 use crate::MMTK;
 use crate::{
@@ -24,11 +26,23 @@ pub fn immix_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMW
     }
     .downcast_mut::<ImmixAllocator<VM>>()
     .unwrap();
-    immix_allocator.reset();
+
+    let plan = mutator.plan.downcast_ref::<Immix<VM>>().unwrap();
+    if unlikely(plan.common().is_zygote_process() && !plan.common().has_zygote_space()) {
+        immix_allocator.rebind(plan.common().get_zygote().get_immix_space());
+    } else {
+        // Either the runtime has a Zygote space or it is a command-line runtime
+        debug_assert!(
+            plan.common().has_zygote_space()
+                || (!plan.common().is_zygote_process()
+                    && !*plan.common().base.options.is_zygote_process)
+        );
+        immix_allocator.rebind(&plan.immix_space);
+    }
 }
 
 pub(in crate::plan) const RESERVED_ALLOCATORS: ReservedAllocators = ReservedAllocators {
-    n_immix: 1,
+    n_immix: 0,
     ..ReservedAllocators::DEFAULT
 };
 
@@ -48,8 +62,13 @@ pub fn create_immix_mutator<VM: VMBinding>(
     let config = MutatorConfig {
         allocator_mapping: &ALLOCATOR_MAPPING,
         space_mapping: Box::new({
-            let mut vec = create_space_mapping(RESERVED_ALLOCATORS, true, immix);
-            vec.push((AllocatorSelector::Immix(0), &immix.immix_space));
+            let mut vec =
+                create_space_mapping(RESERVED_ALLOCATORS, true, immix);
+            // Use real ImmixSpace when we either have a Zygote space already or if we are
+            // not the Zygote process
+            if likely(immix.common().has_zygote_space() || !immix.common().is_zygote_process()) {
+                vec.push((AllocatorSelector::Immix(0), &immix.immix_space));
+            }
             vec
         }),
         prepare_func: &unreachable_prepare_func,
