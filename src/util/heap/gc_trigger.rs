@@ -104,6 +104,10 @@ impl<VM: VMBinding> GCTrigger<VM> {
         let plan = unsafe { self.plan.assume_init() };
         self.policy.is_heap_full(plan)
     }
+
+    pub fn clamp_max_heap_size(&mut self, max: usize) -> bool {
+        self.policy.clamp_max_heap_size(max)
+    }
 }
 
 /// Provides statistics about the space. This is exposed to bindings, as it is used
@@ -167,6 +171,8 @@ pub trait GCTriggerPolicy<VM: VMBinding>: Sync + Send {
     fn get_max_heap_size_in_pages(&self) -> usize;
     /// Can the heap size grow?
     fn can_heap_size_grow(&self) -> bool;
+    /// Clamp max heap size to provided value. Return if max heap size was clamped
+    fn clamp_max_heap_size(&mut self, max: usize) -> bool;
 }
 
 /// A simple GC trigger that uses a fixed heap size.
@@ -198,6 +204,10 @@ impl<VM: VMBinding> GCTriggerPolicy<VM> for FixedHeapSizeTrigger {
     }
 
     fn can_heap_size_grow(&self) -> bool {
+        false
+    }
+
+    fn clamp_max_heap_size(&mut self, _max: usize) -> bool {
         false
     }
 }
@@ -465,6 +475,33 @@ impl<VM: VMBinding> GCTriggerPolicy<VM> for MemBalancerTrigger {
 
     fn can_heap_size_grow(&self) -> bool {
         self.current_heap_pages.load(Ordering::Relaxed) < self.max_heap_pages
+    }
+
+    fn clamp_max_heap_size(&mut self, max: usize) -> bool {
+        use crate::util::constants::LOG_BYTES_IN_PAGE;
+        let max_pages = max >> LOG_BYTES_IN_PAGE;
+        debug_assert!(
+            self.current_heap_pages.load(Ordering::Relaxed) <= max_pages,
+            "Currently allocated pages {} exceeds provided max pages {}",
+            self.current_heap_pages.load(Ordering::Relaxed),
+            max_pages,
+        );
+        debug_assert!(
+            max_pages <= self.max_heap_pages,
+            "Provided max pages {} exceeds current max pages {}",
+            max_pages,
+            self.max_heap_pages,
+        );
+        debug_assert!(
+            self.min_heap_pages <= max_pages,
+            "Current min pages {} exceeds provided max pages {}",
+            self.min_heap_pages,
+            max_pages,
+        );
+        self.min_heap_pages = max_pages;
+        self.max_heap_pages = max_pages;
+        self.current_heap_pages.store(max_pages, Ordering::SeqCst);
+        true
     }
 }
 impl MemBalancerTrigger {

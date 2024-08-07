@@ -427,6 +427,18 @@ impl<VM: VMBinding> MMTK<VM> {
         self.state.set_is_pre_first_zygote_fork_gc(is_pre_first_zygote_fork_gc)
     }
 
+    /// Clamp the max heap size for target application. Return if the max heap size was clamped
+    pub fn clamp_max_heap_size(&mut self, max: usize) -> bool {
+        // XXX(kunals): This is incredibly unsafe as we cast the arc into a mutable reference during
+        // run-time when others have access to it
+        {
+            // TODO: use Arc::get_mut_unchecked() when it is availble.
+            let gc_trigger: &mut GCTrigger<VM> =
+                unsafe { &mut *(Arc::as_ptr(&self.gc_trigger) as *mut _) };
+            gc_trigger.clamp_max_heap_size(max)
+        }
+    }
+
     /// The application code has requested a collection. This is just a GC hint, and
     /// we may ignore it.
     ///
