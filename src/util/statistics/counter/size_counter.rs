@@ -47,28 +47,28 @@ impl SizeCounter {
     /**
      * Print current (mid-phase) units
      */
-    pub fn print_current_units(&self) {
-        self.units.lock().unwrap().print_current();
+    pub fn print_current_units(&self, output: &mut String) {
+        self.units.lock().unwrap().print_current(output);
     }
 
     /**
      * Print (mid-phase) volume
      */
-    pub fn print_current_volume(&self) {
-        self.volume.lock().unwrap().print_current();
+    pub fn print_current_volume(&self, output: &mut String) {
+        self.volume.lock().unwrap().print_current(output);
     }
 
     /**
      * Print units
      */
-    pub fn print_units(&self) {
-        self.units.lock().unwrap().print_total(None);
+    pub fn print_units(&self, output: &mut String) {
+        self.units.lock().unwrap().print_total(None, output);
     }
 
     /**
      * Print volume
      */
-    pub fn print_volume(&self) {
-        self.volume.lock().unwrap().print_total(None);
+    pub fn print_volume(&self, output: &mut String) {
+        self.volume.lock().unwrap().print_total(None, output);
     }
 }

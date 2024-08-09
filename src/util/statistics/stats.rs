@@ -4,8 +4,6 @@ use crate::util::statistics::counter::*;
 use crate::util::statistics::Timer;
 use crate::vm::VMBinding;
 
-#[cfg(feature = "perf_counter")]
-use pfm::Perfmon;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -47,11 +45,6 @@ impl SharedStats {
 pub struct Stats {
     gc_count: AtomicUsize,
     total_time: Arc<Mutex<Timer>>,
-    // crate `pfm` uses libpfm4 under the hood for parsing perf event names
-    // Initialization of libpfm4 is required before we can use `PerfEvent` types
-    #[cfg(feature = "perf_counter")]
-    perfmon: Perfmon,
-
     pub shared: Arc<SharedStats>,
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
     exceeded_phase_limit: AtomicBool,
@@ -59,15 +52,7 @@ pub struct Stats {
 
 impl Stats {
     #[allow(unused)]
-    pub fn new(options: &Options) -> Self {
-        // Create a perfmon instance and initialize it
-        // we use perfmon to parse perf event names
-        #[cfg(feature = "perf_counter")]
-        let perfmon = {
-            let mut perfmon: Perfmon = Default::default();
-            perfmon.initialize().expect("Perfmon failed to initialize");
-            perfmon
-        };
+    pub fn new() -> Self {
         let shared = Arc::new(SharedStats {
             phase: AtomicUsize::new(0),
             gathering_stats: AtomicBool::new(false),
@@ -82,24 +67,9 @@ impl Stats {
             MonotoneNanoTime {},
         )));
         counters.push(t.clone());
-        // Read from the MMTK option for a list of perf events we want to
-        // measure, and create corresponding counters
-        #[cfg(feature = "perf_counter")]
-        for e in &options.phase_perf_events.events {
-            counters.push(Arc::new(Mutex::new(LongCounter::new(
-                e.0.clone(),
-                shared.clone(),
-                true,
-                false,
-                PerfEventDiffable::new(&e.0, *options.perf_exclude_kernel),
-            ))));
-        }
         Stats {
             gc_count: AtomicUsize::new(0),
             total_time: t,
-            #[cfg(feature = "perf_counter")]
-            perfmon,
-
             shared,
             counters: Mutex::new(counters),
             exceeded_phase_limit: AtomicBool::new(false),
@@ -152,6 +122,27 @@ impl Stats {
         counter
     }
 
+    /// Create perf counters specified in the Options
+    #[cfg(feature = "perf_counter")]
+    pub fn create_perf_counters(&self, options: &Options) {
+        let mut guard = self.counters.lock().unwrap();
+        // Read from the MMTK option for a list of perf events we want to
+        // measure, and create corresponding counters
+        for e in options.phase_perf_events.events {
+            if let Ok(pe) = PerfEventDiffable::new(e.0, *options.perf_exclude_kernel) {
+                guard.push(Arc::new(Mutex::new(LongCounter::new(
+                    e.1.to_string(),
+                    self.shared.clone(),
+                    true,
+                    false,
+                    pe
+                ))));
+            } else {
+                warn!("Error opening event {}", e.1);
+            }
+        }
+    }
+
     pub fn start_gc(&self) {
         self.gc_count.fetch_add(1, Ordering::SeqCst);
         if !self.get_gathering_stats() {
@@ -164,7 +155,7 @@ impl Stats {
             }
             self.shared.increment_phase();
         } else if !self.exceeded_phase_limit.load(Ordering::SeqCst) {
-            eprintln!("Warning: number of GC phases exceeds MAX_PHASES");
+            warn!("Number of GC phases exceeds MAX_PHASES");
             self.exceeded_phase_limit.store(true, Ordering::SeqCst);
         }
     }
@@ -180,61 +171,65 @@ impl Stats {
             }
             self.shared.increment_phase();
         } else if !self.exceeded_phase_limit.load(Ordering::SeqCst) {
-            eprintln!("Warning: number of GC phases exceeds MAX_PHASES");
+            warn!("Number of GC phases exceeds MAX_PHASES");
             self.exceeded_phase_limit.store(true, Ordering::SeqCst);
         }
     }
 
     pub fn print_stats<VM: VMBinding>(&self, mmtk: &'static MMTK<VM>) {
-        println!(
-            "============================ MMTk Statistics Totals ============================"
+        let mut output_string = String::new();
+        output_string.push_str(
+            "============================ MMTk Statistics Totals ============================\n"
         );
         let scheduler_stat = mmtk.scheduler.statistics();
-        self.print_column_names(&scheduler_stat);
-        print!("{}\t", self.get_phase() / 2);
+        self.print_column_names(&scheduler_stat, &mut output_string);
+        output_string.push_str(format!("{}\t", self.get_phase() / 2).as_str());
+        self.total_time.lock().unwrap().print_total(None, &mut output_string);
+        output_string.push('\t');
         let counter = self.counters.lock().unwrap();
         for iter in &(*counter) {
             let c = iter.lock().unwrap();
             if c.merge_phases() {
-                c.print_total(None);
+                c.print_total(None, &mut output_string);
             } else {
-                c.print_total(Some(true));
-                print!("\t");
-                c.print_total(Some(false));
+                c.print_total(Some(true), &mut output_string);
+                output_string.push('\t');
+                c.print_total(Some(false), &mut output_string)
             }
-            print!("\t");
+            output_string.push('\t');
         }
         for value in scheduler_stat.values() {
-            print!("{}\t", value);
+            output_string.push_str(format!("{}\t", value).as_str());
         }
-        println!();
-        print!("Total time: ");
-        self.total_time.lock().unwrap().print_total(None);
-        println!(" ms");
-        println!("------------------------------ End MMTk Statistics -----------------------------")
+        output_string.push_str("\n------------------------------ End MMTk Statistics -----------------------------\n");
+        info!("{}", output_string);
     }
 
-    pub fn print_column_names(&self, scheduler_stat: &HashMap<String, String>) {
-        print!("GC\t");
+    pub fn print_column_names(
+        &self,
+        scheduler_stat: &HashMap<String, String>,
+        output_string: &mut String,
+    ) {
+        output_string.push_str("GC\ttime\t");
         let counter = self.counters.lock().unwrap();
         for iter in &(*counter) {
             let c = iter.lock().unwrap();
             if c.merge_phases() {
-                print!("{}\t", c.name());
+                output_string.push_str(format!("{}\t", c.name()).as_str());
             } else {
-                print!("{}.other\t{}.stw\t", c.name(), c.name());
+                output_string.push_str(format!("{}.other\t{}.stw\t", c.name(), c.name()).as_str());
             }
         }
         for name in scheduler_stat.keys() {
-            print!("{}\t", name);
+            output_string.push_str(format!("{}\t", name).as_str());
         }
-        println!();
+        output_string.push('\n');
     }
 
     pub fn start_all(&self) {
         let counters = self.counters.lock().unwrap();
         if self.get_gathering_stats() {
-            panic!("calling Stats.startAll() while stats running");
+            panic!("Calling Stats.start_all() while stats running");
         }
         self.shared.set_gathering_stats(true);
 

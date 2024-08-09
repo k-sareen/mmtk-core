@@ -159,7 +159,7 @@ impl<VM: VMBinding> MMTK<VM> {
             state.clone(),
         ));
 
-        let stats = Arc::new(Stats::new(&options));
+        let stats = Arc::new(Stats::new());
 
         // We need this during creating spaces, but we do not use this once the MMTk instance is created.
         // So we do not save it in MMTK. This may change in the future.
@@ -307,6 +307,10 @@ impl<VM: VMBinding> MMTK<VM> {
             "MMTk collection has not been initialized, yet (was initialize_collection() called before?)"
         );
         probe!(mmtk, after_fork);
+        // XXX(kunals): We create the perf counters here because we are not allowed to open
+        // extraneous files before the Zygote has been forked for the first time
+        #[cfg(feature = "perf_counter")]
+        self.stats.create_perf_counters(&self.options);
         self.scheduler.respawn_gc_threads_after_forking(tls);
     }
 

@@ -32,7 +32,7 @@ pub trait Counter {
     ///
     /// If the counter merges the phases, the printing value will include
     /// the specified phase and the next phase
-    fn print_count(&self, phase: usize);
+    fn print_count(&self, phase: usize, output: &mut String);
     /// Get the total count over past phases
     ///
     /// If the argument is None, count all phases.
@@ -42,17 +42,17 @@ pub trait Counter {
     ///
     /// If the argument is None, count all phases.
     /// Otherwise, count only `other` phases if true, or `stw` phases if false
-    fn print_total(&self, other: Option<bool>);
+    fn print_total(&self, other: Option<bool>, output: &mut String);
     /// Print the minimum count of the past phases
     ///
     /// Consider only `other` phases if true, or `stw` phases if false
-    fn print_min(&self, other: bool);
+    fn print_min(&self, other: bool, output: &mut String);
     /// Print the maximum count of the past phases
     ///
     /// Consider only `other` phases if true, or `stw` phases if false
-    fn print_max(&self, other: bool);
+    fn print_max(&self, other: bool, output: &mut String);
     /// Print the count of the last phases
-    fn print_last(&self);
+    fn print_last(&self, output: &mut String);
     /// Whether the counter merges other and stw phases.
     fn merge_phases(&self) -> bool;
     /// Whether the counter starts implicitly after creation
@@ -79,7 +79,7 @@ pub trait Diffable {
     /// Compute the difference between two readings
     fn diff(current: &Self::Val, earlier: &Self::Val) -> u64;
     /// Print the difference in a specific format
-    fn print_diff(val: u64);
+    fn print_diff(val: u64, output: &mut String);
 }
 
 pub struct MonotoneNanoTime;
@@ -102,7 +102,7 @@ impl Diffable for MonotoneNanoTime {
         delta.as_secs() * 1_000_000_000 + u64::from(delta.subsec_nanos())
     }
 
-    fn print_diff(val: u64) {
-        print!("{:.*}", 2, val as f64 / 1e6f64);
+    fn print_diff(val: u64, output: &mut String) {
+        output.push_str(format!("{:.*}", 2, val as f64 / 1e6f64).as_str());
     }
 }

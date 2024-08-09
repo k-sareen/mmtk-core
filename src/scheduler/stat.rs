@@ -1,7 +1,7 @@
 //! Statistics for work packets
 use super::work_counter::{WorkCounter, WorkCounterBase, WorkDuration};
-#[cfg(feature = "perf_counter")]
-use crate::scheduler::work_counter::WorkPerfEvent;
+// #[cfg(feature = "perf_counter")]
+// use crate::scheduler::work_counter::WorkPerfEvent;
 use crate::vm::VMBinding;
 use crate::MMTK;
 use std::any::TypeId;
@@ -238,15 +238,15 @@ impl<VM: VMBinding> WorkerLocalStat<VM> {
     #[allow(unused_variables, unused_mut)]
     fn counter_set(mmtk: &'static MMTK<VM>) -> Vec<Box<dyn WorkCounter>> {
         let mut counters: Vec<Box<dyn WorkCounter>> = vec![Box::new(WorkDuration::new())];
-        #[cfg(feature = "perf_counter")]
-        for e in &mmtk.options.work_perf_events.events {
-            counters.push(Box::new(WorkPerfEvent::new(
-                &e.0,
-                e.1,
-                e.2,
-                *mmtk.options.perf_exclude_kernel,
-            )));
-        }
+        // #[cfg(feature = "perf_counter")]
+        // for e in mmtk.options.work_perf_events.events {
+        //     counters.push(Box::new(WorkPerfEvent::new(
+        //         e.0,
+        //         e.1,
+        //         e.2,
+        //         *mmtk.options.perf_exclude_kernel,
+        //     )));
+        // }
         counters
     }
 }

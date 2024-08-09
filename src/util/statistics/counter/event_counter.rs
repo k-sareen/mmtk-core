@@ -52,12 +52,12 @@ impl EventCounter {
         }
     }
 
-    pub fn print_current(&self) {
-        self.print_value(self.current_count);
+    pub fn print_current(&self, output: &mut String) {
+        self.print_value(self.current_count, output);
     }
 
-    fn print_value(&self, value: u64) {
-        print!("{}", value);
+    fn print_value(&self, value: u64, output: &mut String) {
+        output.push_str(format!("{}", value).as_str());
     }
 }
 
@@ -87,12 +87,12 @@ impl Counter for EventCounter {
         }
     }
 
-    fn print_count(&self, phase: usize) {
+    fn print_count(&self, phase: usize, output: &mut String) {
         if self.merge_phases() {
             debug_assert!((phase | 1) == (phase + 1));
-            self.print_value(self.count[phase] + self.count[phase + 1]);
+            self.print_value(self.count[phase] + self.count[phase + 1], output);
         } else {
-            self.print_value(self.count[phase]);
+            self.print_value(self.count[phase], output);
         }
     }
 
@@ -117,11 +117,11 @@ impl Counter for EventCounter {
         }
     }
 
-    fn print_total(&self, other: Option<bool>) {
-        self.print_value(self.get_total(other));
+    fn print_total(&self, other: Option<bool>, output: &mut String) {
+        self.print_value(self.get_total(other), output);
     }
 
-    fn print_min(&self, other: bool) {
+    fn print_min(&self, other: bool, output: &mut String) {
         let mut p = !other as usize;
         let mut min = self.count[p];
         while p < self.stats.get_phase() {
@@ -130,10 +130,10 @@ impl Counter for EventCounter {
                 p += 2;
             }
         }
-        self.print_value(min);
+        self.print_value(min, output);
     }
 
-    fn print_max(&self, other: bool) {
+    fn print_max(&self, other: bool, output: &mut String) {
         let mut p = !other as usize;
         let mut max = self.count[p];
         while p < self.stats.get_phase() {
@@ -142,13 +142,13 @@ impl Counter for EventCounter {
                 p += 2;
             }
         }
-        self.print_value(max);
+        self.print_value(max, output);
     }
 
-    fn print_last(&self) {
+    fn print_last(&self, output: &mut String) {
         let phase = self.stats.get_phase();
         if phase > 0 {
-            self.print_count(phase - 1);
+            self.print_count(phase - 1, output);
         }
     }
 

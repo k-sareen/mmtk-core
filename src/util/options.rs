@@ -4,6 +4,9 @@ use crate::util::Address;
 use std::default::Default;
 use std::fmt::Debug;
 use std::str::FromStr;
+use perf_event::events::Event as PerfEventKind;
+use perf_event::events::Hardware as PerfEventHardware;
+use perf_event::events::Software as PerfEventSoftware;
 use strum_macros::EnumString;
 
 use super::heap::vm_layout::vm_layout;
@@ -63,38 +66,27 @@ pub enum PlanSelector {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerfEventOptions {
     /// A vector of perf events in tuples of (event name, PID, CPU)
-    pub events: Vec<(String, i32, i32)>,
+    pub events: &'static [(PerfEventKind, &'static str, i32, i32)],
 }
 
-impl PerfEventOptions {
-    fn parse_perf_events(events: &str) -> Result<Vec<(String, i32, i32)>, String> {
-        events
-            .split(';')
-            .filter(|e| !e.is_empty())
-            .map(|e| {
-                let e: Vec<&str> = e.split(',').collect();
-                if e.len() != 3 {
-                    Err("Please supply (event name, pid, cpu)".into())
-                } else {
-                    let event_name = e[0].into();
-                    let pid = e[1]
-                        .parse()
-                        .map_err(|_| String::from("Failed to parse cpu"))?;
-                    let cpu = e[2]
-                        .parse()
-                        .map_err(|_| String::from("Failed to parse cpu"))?;
-                    Ok((event_name, pid, cpu))
-                }
-            })
-            .collect()
-    }
-}
+#[cfg(feature = "perf_counter")]
+const DEFAULT_PERF_EVENTS: PerfEventOptions = PerfEventOptions {
+    events: &[
+        (PerfEventKind::Hardware(PerfEventHardware::CPU_CYCLES), "PERF_COUNT_HW_CPU_CYCLES", 0, -1),
+        (PerfEventKind::Hardware(PerfEventHardware::INSTRUCTIONS), "PERF_COUNT_HW_INSTRUCTIONS", 0, -1),
+        (PerfEventKind::Software(PerfEventSoftware::TASK_CLOCK), "PERF_COUNT_SW_TASK_CLOCK", 0, -1),
+        (PerfEventKind::Software(PerfEventSoftware::PAGE_FAULTS), "PERF_COUNT_SW_PAGE_FAULTS", 0, -1),
+    ],
+};
+
+#[cfg(not(feature = "perf_counter"))]
+const DEFAULT_PERF_EVENTS: PerfEventOptions = PerfEventOptions { events: &[] };
 
 impl FromStr for PerfEventOptions {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        PerfEventOptions::parse_perf_events(s).map(|events| PerfEventOptions { events })
+        unimplemented!();
     }
 }
 
@@ -755,10 +747,10 @@ options! {
     /// For example, PERF_COUNT_HW_CPU_CYCLES,0,-1 measures the CPU cycles for the current process on all the CPU cores.
     /// Measuring perf events for work packets. NOTE that be VERY CAREFUL when using this option, as this may greatly slowdown GC performance.
     // TODO: Ideally this option should only be included when the features 'perf_counter' and 'work_packet_stats' are enabled. The current macro does not allow us to do this.
-    work_perf_events:       PerfEventOptions     [env_var: true, command_line: true] [|_| cfg!(all(feature = "perf_counter", feature = "work_packet_stats"))] = PerfEventOptions {events: vec![]},
+    work_perf_events:       PerfEventOptions     [env_var: true, command_line: true] [|_| cfg!(all(feature = "perf_counter", feature = "work_packet_stats"))] = DEFAULT_PERF_EVENTS,
     /// Measuring perf events for GC and mutators
     // TODO: Ideally this option should only be included when the features 'perf_counter' are enabled. The current macro does not allow us to do this.
-    phase_perf_events:      PerfEventOptions     [env_var: true, command_line: true] [|_| cfg!(feature = "perf_counter")] = PerfEventOptions {events: vec![]},
+    phase_perf_events:      PerfEventOptions     [env_var: true, command_line: true] [|_| cfg!(feature = "perf_counter")] = DEFAULT_PERF_EVENTS,
     /// Should we exclude perf events occurring in kernel space. By default we include the kernel.
     /// Only set this option if you know the implications of excluding the kernel!
     perf_exclude_kernel:    bool                  [env_var: true, command_line: true] [|_| cfg!(feature = "perf_counter")] = false,

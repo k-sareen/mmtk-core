@@ -57,7 +57,7 @@ pub fn mmtk_init<VM: VMBinding>(builder: &MMTKBuilder) -> Box<MMTK<VM>> {
             "MMTk failed to initialize the logger. Possibly a logger has been initialized by user."
         ),
     }
-    #[cfg(all(feature = "perf_counter", target_os = "linux"))]
+    #[cfg(all(feature = "perf_counter", any(target_os = "linux", target_os = "android")))]
     {
         use std::fs::File;
         use std::io::Read;
