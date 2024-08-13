@@ -199,6 +199,13 @@ impl<VM: VMBinding> MMTK<VM> {
             MMAPPER.set_mmap_strategy(crate::util::memory::MmapStrategy::TransparentHugePages);
         }
 
+        // XXX(kunals): Quarantining address space so that ART's JIT-compiler does not allocate
+        // into MMTk's address space by accident
+        use crate::util::constants::LOG_BYTES_IN_PAGE;
+        use crate::util::heap::layout::vm_layout::vm_layout;
+        let heap_pages = (vm_layout().heap_end - vm_layout().heap_start) >> LOG_BYTES_IN_PAGE;
+        MMAPPER.quarantine_address_range(vm_layout().heap_start, heap_pages);
+
         MMTK {
             options,
             state,
