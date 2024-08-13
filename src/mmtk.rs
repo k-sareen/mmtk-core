@@ -241,6 +241,12 @@ impl<VM: VMBinding> MMTK<VM> {
             !self.state.is_initialized(),
             "MMTk collection has been initialized (was initialize_collection() already called before?)"
         );
+        // XXX(kunals): If we are a command-line run, then we need to create performance counters here
+        // before we create our GC threads
+        #[cfg(feature = "perf_counter")]
+        if !self.is_zygote_process() {
+            self.create_perf_counters();
+        }
         self.scheduler.spawn_gc_threads(self, tls);
         self.state.initialized.store(true, Ordering::SeqCst);
         probe!(mmtk, collection_initialized);
@@ -307,11 +313,32 @@ impl<VM: VMBinding> MMTK<VM> {
             "MMTk collection has not been initialized, yet (was initialize_collection() called before?)"
         );
         probe!(mmtk, after_fork);
-        // XXX(kunals): We create the perf counters here because we are not allowed to open
-        // extraneous files before the Zygote has been forked for the first time
-        #[cfg(feature = "perf_counter")]
-        self.stats.create_perf_counters(&self.options);
         self.scheduler.respawn_gc_threads_after_forking(tls);
+    }
+
+    #[cfg(feature = "perf_counter")]
+    pub fn create_perf_counters(&self) {
+        debug_assert!(!self.is_zygote_process(), "Can't create perf counters for the Zygote!");
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            use std::fs::File;
+            use std::io::Read;
+            let mut status = File::open("/proc/self/status").unwrap();
+            let mut contents = String::new();
+            status.read_to_string(&mut contents).unwrap();
+            for line in contents.lines() {
+                let split: Vec<&str> = line.split('\t').collect();
+                if split[0] == "Threads:" {
+                    let threads = split[1].parse::<i32>().unwrap();
+                    if threads != 1 {
+                        warn!("Current process has {} threads, process-wide perf event measurement will only include child threads spawned from this thread", threads);
+                    }
+                }
+            }
+        }
+        // XXX(kunals): We create the perf counters here because we are not allowed to open
+        // extraneous files for the Zygote
+        self.stats.create_perf_counters(&self.options);
     }
 
     /// Generic hook to allow benchmarks to be harnessed. MMTk will trigger a GC
@@ -507,6 +534,11 @@ impl<VM: VMBinding> MMTK<VM> {
         VM::VMCollection::block_for_gc(tls);
 
         self.set_is_pre_first_zygote_fork_gc(false);
+
+        // The next GC after forking the Zygote should be a full heap GC
+        if let Some(gen) = self.get_plan().generational() {
+            gen.force_full_heap_collection();
+        }
     }
 
     /// MMTK has requested stop-the-world activity (e.g., stw within a concurrent gc).

@@ -57,23 +57,6 @@ pub fn mmtk_init<VM: VMBinding>(builder: &MMTKBuilder) -> Box<MMTK<VM>> {
             "MMTk failed to initialize the logger. Possibly a logger has been initialized by user."
         ),
     }
-    #[cfg(all(feature = "perf_counter", any(target_os = "linux", target_os = "android")))]
-    {
-        use std::fs::File;
-        use std::io::Read;
-        let mut status = File::open("/proc/self/status").unwrap();
-        let mut contents = String::new();
-        status.read_to_string(&mut contents).unwrap();
-        for line in contents.lines() {
-            let split: Vec<&str> = line.split('\t').collect();
-            if split[0] == "Threads:" {
-                let threads = split[1].parse::<i32>().unwrap();
-                if threads != 1 {
-                    warn!("Current process has {} threads, process-wide perf event measurement will only include child threads spawned from this thread", threads);
-                }
-            }
-        }
-    }
     let mmtk = builder.build();
 
     info!(
