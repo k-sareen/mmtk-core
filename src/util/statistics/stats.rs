@@ -48,8 +48,6 @@ pub struct Stats {
     pub shared: Arc<SharedStats>,
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
     exceeded_phase_limit: AtomicBool,
-    #[cfg(feature = "perf_counter")]
-    perf_counters_created: AtomicBool,
 }
 
 impl Stats {
@@ -75,8 +73,6 @@ impl Stats {
             shared,
             counters: Mutex::new(counters),
             exceeded_phase_limit: AtomicBool::new(false),
-            #[cfg(feature = "perf_counter")]
-            perf_counters_created: AtomicBool::new(false),
         }
     }
 
@@ -129,33 +125,21 @@ impl Stats {
     /// Create perf counters specified in the Options
     #[cfg(feature = "perf_counter")]
     pub fn create_perf_counters(&self, options: &Options) {
-        // XXX(kunals): We need to guard this with a compare-exchange because for command-line runs
-        // we end up calling `create_perf_counters` twice:
-        //   1. Inside `initialize_collection`
-        //   2. Inside `Runtime::InitNonZygoteOrPostFork`
-        if self.perf_counters_created.compare_exchange(
-            false,
-            true,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ).is_ok()
-        {
-            let mut guard = self.counters.lock().unwrap();
-            // Read from the MMTK option for a list of perf events we want to
-            // measure, and create corresponding counters
-            for e in options.phase_perf_events.events {
-                if let Ok(pe) = PerfEventDiffable::new(e.0, *options.perf_exclude_kernel) {
-                    info!("Created performance counter {}", e.1);
-                    guard.push(Arc::new(Mutex::new(LongCounter::new(
-                        e.1.to_string(),
-                        self.shared.clone(),
-                        true,
-                        false,
-                        pe
-                    ))));
-                } else {
-                    warn!("Error opening event {}", e.1);
-                }
+        let mut guard = self.counters.lock().unwrap();
+        // Read from the MMTK option for a list of perf events we want to
+        // measure, and create corresponding counters
+        for e in options.phase_perf_events.events {
+            if let Ok(pe) = PerfEventDiffable::new(e.0, *options.perf_exclude_kernel) {
+                info!("Created performance counter {}", e.1);
+                guard.push(Arc::new(Mutex::new(LongCounter::new(
+                    e.1.to_string(),
+                    self.shared.clone(),
+                    true,
+                    false,
+                    pe
+                ))));
+            } else {
+                warn!("Error opening event {}", e.1);
             }
         }
     }

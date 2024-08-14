@@ -122,6 +122,8 @@ pub struct MMTK<VM: VMBinding> {
     inside_harness: AtomicBool,
     #[cfg(feature = "sanity")]
     inside_sanity: AtomicBool,
+    #[cfg(feature = "perf_counter")]
+    perf_counters_created: AtomicBool,
     /// Analysis counters. The feature analysis allows us to periodically stop the world and collect some statistics.
     #[cfg(feature = "analysis")]
     pub(crate) analysis_manager: Arc<AnalysisManager<VM>>,
@@ -220,6 +222,8 @@ impl<VM: VMBinding> MMTK<VM> {
             #[cfg(feature = "sanity")]
             inside_sanity: AtomicBool::new(false),
             inside_harness: AtomicBool::new(false),
+            #[cfg(feature = "perf_counter")]
+            perf_counters_created: AtomicBool::new(false),
             #[cfg(feature = "extreme_assertions")]
             edge_logger: EdgeLogger::new(),
             #[cfg(feature = "analysis")]
@@ -326,26 +330,38 @@ impl<VM: VMBinding> MMTK<VM> {
     #[cfg(feature = "perf_counter")]
     pub fn create_perf_counters(&self) {
         debug_assert!(!self.is_zygote_process(), "Can't create perf counters for the Zygote!");
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        // XXX(kunals): We need to guard this with a compare-exchange because for command-line runs
+        // we end up calling `create_perf_counters` twice:
+        //   1. Inside `initialize_collection`
+        //   2. Inside `Runtime::InitNonZygoteOrPostFork`
+        if self.perf_counters_created.compare_exchange(
+            false,
+            true,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ).is_ok()
         {
-            use std::fs::File;
-            use std::io::Read;
-            let mut status = File::open("/proc/self/status").unwrap();
-            let mut contents = String::new();
-            status.read_to_string(&mut contents).unwrap();
-            for line in contents.lines() {
-                let split: Vec<&str> = line.split('\t').collect();
-                if split[0] == "Threads:" {
-                    let threads = split[1].parse::<i32>().unwrap();
-                    if threads != 1 {
-                        warn!("Current process has {} threads, process-wide perf event measurement will only include child threads spawned from this thread", threads);
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                use std::fs::File;
+                use std::io::Read;
+                let mut status = File::open("/proc/self/status").unwrap();
+                let mut contents = String::new();
+                status.read_to_string(&mut contents).unwrap();
+                for line in contents.lines() {
+                    let split: Vec<&str> = line.split('\t').collect();
+                    if split[0] == "Threads:" {
+                        let threads = split[1].parse::<i32>().unwrap();
+                        if threads != 1 {
+                            warn!("Current process has {} threads, process-wide perf event measurement will only include child threads spawned from this thread", threads);
+                        }
                     }
                 }
             }
+            // XXX(kunals): We create the perf counters here because we are not allowed to open
+            // extraneous files for the Zygote
+            self.stats.create_perf_counters(&self.options);
         }
-        // XXX(kunals): We create the perf counters here because we are not allowed to open
-        // extraneous files for the Zygote
-        self.stats.create_perf_counters(&self.options);
     }
 
     /// Generic hook to allow benchmarks to be harnessed. MMTk will trigger a GC
