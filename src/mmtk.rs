@@ -324,6 +324,9 @@ impl<VM: VMBinding> MMTK<VM> {
             "MMTk collection has not been initialized, yet (was initialize_collection() called before?)"
         );
         probe!(mmtk, after_fork);
+        // FIXME(kunals): We need to recheck the cpu masks to create the correct number of GC threads.
+        // Currently we create the same number of GC threads as the Zygote had at boot time. This is
+        // obviously incorrect in the case we taskset an application to the big cores.
         self.scheduler.respawn_gc_threads_after_forking(tls);
     }
 
