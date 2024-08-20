@@ -11,18 +11,33 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 pub type Histogram = [usize; Defrag::NUM_BINS];
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Defrag {
     /// Is current GC a defrag GC?
     in_defrag_collection: AtomicBool,
     /// Is defrag space exhausted?
     defrag_space_exhausted: AtomicBool,
+    /// Percentage of heap size reserved for defragmentation.
+    defrag_headroom_percent: usize,
     /// A list of completed mark histograms reported by workers
     pub mark_histograms: Mutex<Vec<Histogram>>,
     /// A block with number of holes greater than this threshold will be defragmented.
     pub defrag_spill_threshold: AtomicUsize,
     /// The number of remaining clean pages in defrag space.
     available_clean_pages_for_defrag: AtomicUsize,
+}
+
+impl Default for Defrag {
+    fn default() -> Self {
+        Self {
+            in_defrag_collection: AtomicBool::new(false),
+            defrag_space_exhausted: AtomicBool::new(false),
+            defrag_headroom_percent: 2,
+            mark_histograms: Mutex::new(vec![]),
+            defrag_spill_threshold: AtomicUsize::new(0),
+            available_clean_pages_for_defrag: AtomicUsize::new(0),
+        }
+    }
 }
 
 pub struct StatsForDefrag {
@@ -57,7 +72,6 @@ impl Defrag {
     const NUM_BINS: usize = (Block::LINES >> 1) + 1;
     const DEFRAG_LINE_REUSE_RATIO: f32 = 0.99;
     const MIN_SPILL_THRESHOLD: usize = 2;
-    const DEFRAG_HEADROOM_PERCENT: usize = super::DEFRAG_HEADROOM_PERCENT;
 
     /// Allocate a new local histogram.
     pub const fn new_histogram(&self) -> Histogram {
@@ -72,6 +86,10 @@ impl Defrag {
     /// Check if the current GC is a defrag GC.
     pub fn in_defrag(&self) -> bool {
         self.in_defrag_collection.load(Ordering::Acquire)
+    }
+
+    pub fn set_defrag_headroom_percent(&mut self, defrag_headroom_percent: usize) {
+        self.defrag_headroom_percent = defrag_headroom_percent;
     }
 
     /// Determine whether the current GC should do defragmentation.
@@ -97,7 +115,7 @@ impl Defrag {
 
     /// Get the number of defrag headroom pages.
     pub fn defrag_headroom_pages<VM: VMBinding>(&self, space: &ImmixSpace<VM>) -> usize {
-        space.get_page_resource().reserved_pages() * Self::DEFRAG_HEADROOM_PERCENT / 100
+        space.get_page_resource().reserved_pages() * self.defrag_headroom_percent / 100
     }
 
     /// Check if the defrag space is exhausted.
