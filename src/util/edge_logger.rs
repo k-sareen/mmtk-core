@@ -53,5 +53,7 @@ impl<ES: Edge> EdgeLogger<ES> {
 /// Whether we should check duplicate edges. This depends on the actual plan.
 pub fn should_check_duplicate_edges<VM: VMBinding>(plan: &dyn Plan<VM = VM>) -> bool {
     // If a plan allows tracing duplicate edges, we should not run this check.
-    !plan.constraints().may_trace_duplicate_edges
+    // XXX(kunals): For Android we may have duplicate edges because the root visitor might end up
+    // enqueuing the same root slot multiple times. For example, the declaring_class_ in ArtMethod
+    false
 }
