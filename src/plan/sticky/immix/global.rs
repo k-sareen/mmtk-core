@@ -224,6 +224,10 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         }
         true
     }
+
+    fn can_pin_objects_in_default_space(&self) -> bool {
+        cfg!(feature = "object_pinning")
+    }
 }
 
 impl<VM: VMBinding> GenerationalPlan for StickyImmix<VM> {

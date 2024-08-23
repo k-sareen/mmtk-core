@@ -130,6 +130,10 @@ impl<VM: VMBinding> Plan for Immix<VM> {
         self.immix_space.reserved_pages() + self.common.get_used_pages()
     }
 
+    fn can_pin_objects_in_default_space(&self) -> bool {
+        cfg!(feature = "object_pinning")
+    }
+
     fn base(&self) -> &BasePlan<VM> {
         &self.common.base
     }

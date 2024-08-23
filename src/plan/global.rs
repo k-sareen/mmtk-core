@@ -324,6 +324,11 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
 
     // TODO(kunals): Function that returns if the default space in a plan supports pinning or not.
     // This will be required to support other plans in the MMTk ART port
+    /// Return whether the default space for this plan can pin objects. A plan should override this
+    /// if its default space can pin objects
+    fn can_pin_objects_in_default_space(&self) -> bool {
+        false
+    }
 }
 
 impl_downcast!(Plan assoc VM);
@@ -718,6 +723,10 @@ impl<VM: VMBinding> CommonPlan<VM> {
             }
         }
         self.base.release(tls, full_heap)
+    }
+
+    pub fn can_pin_objects_in_default_space(&self) -> bool {
+        self.is_zygote_process() && !self.has_zygote_space()
     }
 
     pub fn get_immortal(&self) -> &ImmortalSpace<VM> {
