@@ -425,8 +425,8 @@ pub(crate) fn create_allocator_mapping(
 
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.
         map[AllocationSemantics::NonMoving] =
-            AllocatorSelector::BumpPointer(reserved.n_bump_pointer);
-        reserved.n_bump_pointer += 1;
+            AllocatorSelector::FreeList(reserved.n_free_list);
+        reserved.n_free_list += 1;
 
         // TODO(kunals): This required if we want to support plans other than Immix-style ones for ART
         // map[AllocationSemantics::Zygote] =
@@ -497,10 +497,10 @@ pub(crate) fn create_space_mapping<VM: VMBinding>(
         reserved.n_large_object += 1;
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.
         vec.push((
-            AllocatorSelector::BumpPointer(reserved.n_bump_pointer),
+            AllocatorSelector::FreeList(reserved.n_free_list),
             plan.common().get_nonmoving(),
         ));
-        reserved.n_bump_pointer += 1;
+        reserved.n_free_list += 1;
         if plan.common().is_zygote_process() && !plan.common().has_zygote_space() {
             vec.push((
                 AllocatorSelector::Immix(reserved.n_immix),

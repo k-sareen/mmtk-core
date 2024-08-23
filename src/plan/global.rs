@@ -572,7 +572,7 @@ pub struct CommonPlan<VM: VMBinding> {
     #[space]
     pub los: LargeObjectSpace<VM>,
     #[space]
-    pub nonmoving: ImmortalSpace<VM>,
+    pub nonmoving: MarkSweepSpace<VM>,
     #[post_scan]
     #[space]
     #[copy_semantics(CopySemantics::DefaultCopy)]
@@ -604,7 +604,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 args.get_space_args("los", true, VMRequest::discontiguous()),
                 false,
             ),
-            nonmoving: ImmortalSpace::new(args.get_space_args(
+            nonmoving: MarkSweepSpace::new(args.get_space_args(
                 "nonmoving",
                 true,
                 VMRequest::discontiguous(),
@@ -652,7 +652,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         }
         if self.nonmoving.in_space(object) {
             trace!("trace_object: object in nonmoving space");
-            return self.nonmoving.trace_object(queue, object);
+            return self.nonmoving.trace_object::<Q, DEFAULT_TRACE>(queue, object, None, worker);
         }
         if self.zygote.in_space(object) {
             if self.has_zygote_space() {
@@ -685,7 +685,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
     ) {
         self.immortal.prepare();
         self.los.prepare(full_heap);
-        self.nonmoving.prepare();
+        self.nonmoving.prepare(full_heap);
         if let Some(zygote_space) = self.zygote.as_mut() {
             zygote_space.prepare(
                 full_heap,
@@ -728,7 +728,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         &self.los
     }
 
-    pub fn get_nonmoving(&self) -> &ImmortalSpace<VM> {
+    pub fn get_nonmoving(&self) -> &MarkSweepSpace<VM> {
         &self.nonmoving
     }
 
