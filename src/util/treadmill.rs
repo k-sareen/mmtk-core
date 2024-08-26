@@ -81,6 +81,19 @@ impl TreadMill {
         self.to_space.lock().unwrap().insert(object);
     }
 
+    pub fn enumerate_large_objects(&self) -> Vec<ObjectReference> {
+        let mut objects = vec![];
+        let mut enumerate_objects = |set: &Mutex<HashSet<ObjectReference>>| {
+            let set = set.lock().unwrap();
+            for object in set.iter() {
+                objects.push(*object);
+            }
+        };
+        enumerate_objects(&self.alloc_nursery);
+        enumerate_objects(&self.to_space);
+        objects
+    }
+
     pub fn is_to_space_empty(&self) -> bool {
         self.to_space.lock().unwrap().is_empty()
     }

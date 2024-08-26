@@ -582,6 +582,23 @@ impl<VM: VMBinding> MMTK<VM> {
         self.gc_requester.request();
     }
 
+    /// Iterate through all regions allocated by MMTk
+    pub fn iterate_allocated_regions(&self) -> Vec<(crate::util::Address, usize)> {
+        let mut regions = vec![];
+        let plan = self.get_plan();
+        plan.for_each_space(&mut |space| {
+            let mut r = space.iterate_allocated_regions();
+            regions.append(&mut r);
+        });
+        regions
+    }
+
+    /// Enumerate all live large objects
+    pub fn enumerate_large_objects(&self) -> Vec<crate::util::ObjectReference> {
+        let plan = self.get_plan();
+        plan.common().get_los().enumerate_large_objects()
+    }
+
     /// Get a reference to the plan.
     pub fn get_plan(&self) -> &dyn Plan<VM = VM> {
         unsafe { &**(self.plan.get()) }

@@ -117,6 +117,10 @@ impl<VM: VMBinding> Space<VM> for CopySpace<VM> {
     fn set_copy_for_sft_trace(&mut self, semantics: Option<CopySemantics>) {
         self.common.copy = semantics;
     }
+
+    fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
+        self.pr.iterate_allocated_regions().collect::<Vec<(Address, usize)>>()
+    }
 }
 
 impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for CopySpace<VM> {

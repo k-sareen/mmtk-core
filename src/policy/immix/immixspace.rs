@@ -178,6 +178,20 @@ impl<VM: VMBinding> Space<VM> for ImmixSpace<VM> {
     fn set_copy_for_sft_trace(&mut self, _semantics: Option<CopySemantics>) {
         panic!("We do not use SFT to trace objects for Immix. set_copy_context() cannot be used.")
     }
+    fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
+        let mut blocks = vec![];
+        let chunk_map = &self.chunk_map;
+        for chunk in chunk_map.all_chunks() {
+            if chunk_map.get(chunk) == ChunkState::Allocated {
+                for block in chunk.iter_region::<Block>() {
+                    if block.get_state() != BlockState::Unallocated {
+                        blocks.push((block.start(), block.end() - block.start()));
+                    }
+                }
+            }
+        }
+        blocks
+    }
 }
 
 impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for ImmixSpace<VM> {

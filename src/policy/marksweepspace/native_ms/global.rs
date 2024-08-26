@@ -171,6 +171,21 @@ impl<VM: VMBinding> Space<VM> for MarkSweepSpace<VM> {
     fn release_multiple_pages(&mut self, _start: crate::util::Address) {
         todo!()
     }
+
+    fn iterate_allocated_regions(&self) -> Vec<(crate::util::Address, usize)> {
+        let mut blocks = vec![];
+        let chunk_map = &self.chunk_map;
+        for chunk in chunk_map.all_chunks() {
+            if chunk_map.get(chunk) == ChunkState::Allocated {
+                for block in chunk.iter_region::<Block>() {
+                    if block.get_state() != BlockState::Unallocated {
+                        blocks.push((block.start(), block.end() - block.start()));
+                    }
+                }
+            }
+        }
+        blocks
+    }
 }
 
 impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for MarkSweepSpace<VM> {

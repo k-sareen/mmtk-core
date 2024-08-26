@@ -7,7 +7,7 @@ use crate::policy::sft::{GCWorkerMutRef, SFT};
 use crate::policy::sft_map::SFTMap;
 use crate::policy::space::{CommonSpace, Space};
 use crate::util::copy::CopySemantics;
-use crate::util::heap::chunk_map::*;
+use crate::util::heap::chunk_map::{*, self};
 use crate::util::heap::{PageResource, VMRequest};
 use crate::util::linear_scan::Region;
 use crate::util::metadata::side_metadata::SideMetadataSanity;
@@ -141,6 +141,21 @@ impl<VM: VMBinding> Space<VM> for ZygoteSpace<VM> {
 
     fn set_copy_for_sft_trace(&mut self, _semantics: Option<CopySemantics>) {
         panic!("We do not use SFT to trace objects for Immix-like spaces. set_copy_context() cannot be used.")
+    }
+
+    fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
+        let mut blocks = vec![];
+        let chunk_map = &self.immix_space.chunk_map;
+        for chunk in chunk_map.all_chunks() {
+            if chunk_map.get(chunk) == ChunkState::Allocated {
+                for block in chunk.iter_region::<Block>() {
+                    if block.get_state() != BlockState::Unallocated {
+                        blocks.push((block.start(), block.end() - block.start()));
+                    }
+                }
+            }
+        }
+        blocks
     }
 }
 
@@ -289,6 +304,14 @@ impl<VM: VMBinding> Space<VM> for Option<ZygoteSpace<VM>> {
             space.in_space(object)
         } else {
             false
+        }
+    }
+
+    fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
+        if let Some(space) = self.as_ref() {
+            space.iterate_allocated_regions()
+        } else {
+            vec![]
         }
     }
 }

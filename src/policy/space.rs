@@ -324,6 +324,12 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
         self.common().gc_trigger.as_ref()
     }
 
+    /// Iterate through the allocated regions for this space. If the space uses blocks,
+    /// then each region should be block-sized.
+    fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
+        vec![]
+    }
+
     fn release_multiple_pages(&mut self, start: Address);
 
     /// What copy semantic we should use for this space if we copy objects from this space.

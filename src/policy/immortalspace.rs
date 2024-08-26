@@ -98,6 +98,10 @@ impl<VM: VMBinding> Space<VM> for ImmortalSpace<VM> {
     fn release_multiple_pages(&mut self, _start: Address) {
         panic!("immortalspace only releases pages enmasse")
     }
+
+    fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
+        self.pr.iterate_allocated_regions().collect::<Vec<(Address, usize)>>()
+    }
 }
 
 use crate::scheduler::GCWorker;

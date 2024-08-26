@@ -262,6 +262,10 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         }
     }
 
+    pub fn enumerate_large_objects(&self) -> Vec<crate::util::ObjectReference> {
+       self.treadmill.enumerate_large_objects()
+    }
+
     /// Allocate an object
     pub fn allocate_pages(&self, tls: VMThread, pages: usize) -> Address {
         self.acquire(tls, pages)
