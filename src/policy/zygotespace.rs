@@ -177,12 +177,11 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
             }
         };
 
-        // XXX(kunals): We set the defrag headroom percent to 50% for the Zygote
-        let mut immix_space = ImmixSpace::new(args, immix_space_args);
-        immix_space.set_defrag_headroom_percent(50);
-
         ZygoteSpace {
-            immix_space,
+            immix_space: ImmixSpace::new(
+                args,
+                immix_space_args,
+            ),
             created_zygote_space: false,
         }
     }

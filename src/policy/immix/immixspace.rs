@@ -341,10 +341,6 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         self.defrag.defrag_headroom_pages(self)
     }
 
-    pub fn set_defrag_headroom_percent(&mut self, defrag_headroom_percent: usize) {
-        self.defrag.set_defrag_headroom_percent(defrag_headroom_percent)
-    }
-
     /// Check if current GC is a defrag GC.
     pub fn in_defrag(&self) -> bool {
         self.defrag.in_defrag()
