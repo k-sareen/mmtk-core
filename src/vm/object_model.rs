@@ -98,9 +98,7 @@ pub trait ObjectModel<VM: VMBinding> {
     /// comparison to the object size.
     //
     // TODO: Cleanup and place the LOS mark and nursery bits in the header. See here: https://github.com/mmtk/mmtk-core/issues/847
-    // XXX(kunals): We don't use the `LOCAL_LOS_MARK_NURSERY` anymore as we use the `LOCAL_MARK_BIT` for
-    // LOS objects as well
-    // const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec;
+    const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec;
 
     /// Set this to true if the VM binding requires the valid object (VO) bits to be available
     /// during tracing. If this constant is set to `false`, it is undefined behavior if the binding
@@ -624,13 +622,13 @@ pub mod specs {
         0,
         LOG_MIN_OBJECT_SIZE
     );
-    // Mark&nursery bits for LOS: 2 bit per page, local
-    // define_vm_metadata_spec!(
-    //     /// 2-bits local metadata for the large object space. The two bits serve as
-    //     /// the mark bit and the nursery bit.
-    //     VMLocalLOSMarkNurserySpec,
-    //     false,
-    //     1,
-    //     LOG_BYTES_IN_PAGE
-    // );
+    // Mark & nursery bits for LOS: 2 bit per page, local
+    define_vm_metadata_spec!(
+        /// 2-bits local metadata for the large object space. The two bits serve as
+        /// the mark bit and the nursery bit.
+        VMLocalLOSMarkNurserySpec,
+        false,
+        1,
+        LOG_BYTES_IN_PAGE
+    );
 }

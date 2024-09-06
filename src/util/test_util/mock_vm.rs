@@ -475,10 +475,8 @@ impl crate::vm::ObjectModel<MockVM> for MockVM {
     const LOCAL_FORWARDING_BITS_SPEC: VMLocalForwardingBitsSpec =
         VMLocalForwardingBitsSpec::in_header(0);
     const LOCAL_MARK_BIT_SPEC: VMLocalMarkBitSpec = VMLocalMarkBitSpec::in_header(0);
-    // XXX(kunals): We don't use the `LOCAL_LOS_MARK_NURSERY` anymore as we use the
-    // `LOCAL_MARK_BIT` for LOS objects as well
-    // const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec =
-    //     VMLocalLOSMarkNurserySpec::in_header(0);
+    const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec =
+        VMLocalLOSMarkNurserySpec::in_header(0);
 
     const OBJECT_REF_OFFSET_LOWER_BOUND: isize = DEFAULT_OBJECT_REF_OFFSET as isize;
 
