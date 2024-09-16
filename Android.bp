@@ -18,6 +18,7 @@ license {
 rust_library {
     name: "libmmtk",
     host_supported: true,
+    prefer_rlib: true,
     crate_name: "mmtk",
     cargo_env_compat: true,
     cargo_pkg_version: "0.24.0",
