@@ -221,8 +221,10 @@ impl<VM: VMBinding> Immix<VM> {
         );
 
         if in_defrag {
+            info!("{} defrag collection", immix_space.get_name());
             scheduler.schedule_common_work::<DefragContext>(plan);
         } else {
+            info!("{} non-moving collection", immix_space.get_name());
             scheduler.schedule_common_work::<FastContext>(plan);
         }
     }
