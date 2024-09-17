@@ -75,7 +75,7 @@ impl<VM: VMBinding> SFT for MarkCompactSpace<VM> {
     }
 
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
+    fn is_sane(&self, _object: ObjectReference) -> bool {
         true
     }
 

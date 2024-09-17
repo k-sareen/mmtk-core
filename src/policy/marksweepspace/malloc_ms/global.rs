@@ -91,8 +91,8 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
     }
 
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        true
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        self.is_live(object)
     }
 
     // For malloc space, we need to further check the VO bit.

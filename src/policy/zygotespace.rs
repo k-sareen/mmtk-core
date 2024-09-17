@@ -91,8 +91,8 @@ impl<VM: VMBinding> SFT for ZygoteSpace<VM> {
     }
 
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        true
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        self.is_live(object)
     }
 
     fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool) {
@@ -349,8 +349,8 @@ impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
     }
 
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        self.as_ref().unwrap().is_sane()
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        self.as_ref().unwrap().is_sane(object)
     }
 
     fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool) {

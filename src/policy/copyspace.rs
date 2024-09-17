@@ -52,8 +52,8 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
     }
 
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        !self.is_from_space()
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        self.is_live(object)
     }
 
     fn initialize_object_metadata(&self, _object: ObjectReference, _alloc: bool) {

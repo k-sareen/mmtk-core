@@ -53,8 +53,8 @@ impl<VM: VMBinding> SFT for VMSpace<VM> {
         false
     }
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        true
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        VM::VMObjectModel::is_object_sane(object)
     }
     fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         self.mark_state

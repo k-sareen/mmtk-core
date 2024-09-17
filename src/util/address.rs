@@ -588,7 +588,7 @@ impl ObjectReference {
     /// Is the object sane?
     #[cfg(feature = "sanity")]
     pub fn is_sane(self) -> bool {
-        unsafe { SFT_MAP.get_unchecked(Address(self.0)) }.is_sane()
+        unsafe { SFT_MAP.get_unchecked(Address(self.0)) }.is_sane(self)
     }
 }
 

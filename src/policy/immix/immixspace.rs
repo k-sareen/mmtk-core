@@ -133,8 +133,8 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
     }
 
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        true
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        self.is_live(object)
     }
     fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         // We may have to set mark bit to 1 in case the marked state is 0

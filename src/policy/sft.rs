@@ -61,7 +61,7 @@ pub trait SFT {
     /// Is the object sane? A policy should return false if there is any abnormality about
     /// object - the sanity checker will fail if an object is not sane.
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool;
+    fn is_sane(&self, object: ObjectReference) -> bool;
 
     /// Is the object managed by MMTk? For most cases, if we find the sft for an object, that means
     /// the object is in the space and managed by MMTk. However, for some spaces, like MallocSpace,
@@ -125,8 +125,8 @@ impl SFT for EmptySpaceSFT {
         false
     }
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        warn!("Object in empty space!");
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        warn!("Object {:?} in empty space!", object);
         false
     }
     #[cfg(feature = "object_pinning")]

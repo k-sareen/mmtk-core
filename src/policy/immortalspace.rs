@@ -51,7 +51,7 @@ impl<VM: VMBinding> SFT for ImmortalSpace<VM> {
         false
     }
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
+    fn is_sane(&self, _object: ObjectReference) -> bool {
         true
     }
     fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {

@@ -53,8 +53,8 @@ impl<VM: VMBinding> SFT for LargeObjectSpace<VM> {
         false
     }
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
-        true
+    fn is_sane(&self, object: ObjectReference) -> bool {
+        self.is_live(object)
     }
     fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool) {
         let old_value = VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(

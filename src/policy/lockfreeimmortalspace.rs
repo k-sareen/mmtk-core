@@ -66,7 +66,7 @@ impl<VM: VMBinding> SFT for LockFreeImmortalSpace<VM> {
         unimplemented!()
     }
     #[cfg(feature = "sanity")]
-    fn is_sane(&self) -> bool {
+    fn is_sane(&self, _object: ObjectReference) -> bool {
         unimplemented!()
     }
     fn initialize_object_metadata(&self, _object: ObjectReference, _alloc: bool) {
