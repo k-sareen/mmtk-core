@@ -82,6 +82,8 @@ impl TreadMill {
     }
 
     pub fn enumerate_large_objects(&self) -> Vec<ObjectReference> {
+        debug_assert!(self.collect_nursery.lock().unwrap().is_empty());
+        debug_assert!(self.from_space.lock().unwrap().is_empty());
         let mut objects = vec![];
         let mut enumerate_objects = |set: &Mutex<HashSet<ObjectReference>>| {
             let set = set.lock().unwrap();

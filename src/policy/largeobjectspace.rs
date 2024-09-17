@@ -250,7 +250,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             }
             let start = object.to_object_start::<VM>();
             #[cfg(feature = "poison_on_release")]
-            crate::util::memory::set(start, 0xab, VM::VMObjectModel::get_current_size(object));
+            crate::util::memory::set(start, 0xed, VM::VMObjectModel::get_current_size(object));
             self.pr
                 .release_pages(get_super_page(start));
         };
