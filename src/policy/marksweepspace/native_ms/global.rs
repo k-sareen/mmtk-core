@@ -233,7 +233,6 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 MetadataSpec::OnSide(Block::BLOCK_LIST_TABLE),
                 MetadataSpec::OnSide(Block::TLS_TABLE),
                 MetadataSpec::OnSide(Block::MARK_TABLE),
-                MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
             ])
         };
@@ -245,7 +244,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 FreeListPageResource::new_contiguous(common.start, common.extent, vm_map)
             },
             common,
-            chunk_map: ChunkMap::new(),
+            chunk_map: ChunkMap::new(MS_CHUNK_MASK),
             scheduler,
             abandoned: Mutex::new(AbandonedBlockLists {
                 available: new_empty_block_lists(),
@@ -306,6 +305,15 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         if self.test_and_mark(object) {
             let block = Block::containing::<VM>(object);
             block.set_state(BlockState::Marked);
+            debug_assert!(
+                self.chunk_map.get(block.chunk()) == ChunkState::Allocated,
+                "ChunkState for chunk {:?} should be Allocated but is {:?}. Block {:?} object {:?} chunk owner {:#010b}",
+                block.chunk(),
+                self.chunk_map.get(block.chunk()),
+                block,
+                object,
+                self.chunk_map.get_owner(block.chunk()),
+            );
             queue.enqueue(object);
             if self.common.needs_log_bit {
                 VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);

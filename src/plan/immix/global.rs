@@ -13,6 +13,7 @@ use crate::policy::space::Space;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
+use crate::util::heap::chunk_map::IMMIX_CHUNK_MASK;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::metadata::side_metadata::SideMetadataContext;
@@ -168,10 +169,14 @@ impl<VM: VMBinding> Immix<VM> {
         mut plan_args: CreateSpecificPlanArgs<VM>,
         space_args: ImmixSpaceArgs,
     ) -> Self {
+        // Add the chunk mark table to the list of global metadata
+        plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+
         let immix = Immix {
             immix_space: ImmixSpace::new(
                 plan_args.get_space_args("immix", true, VMRequest::discontiguous()),
                 space_args,
+                IMMIX_CHUNK_MASK,
             ),
             common: CommonPlan::new(plan_args),
             last_gc_was_defrag: AtomicBool::new(false),

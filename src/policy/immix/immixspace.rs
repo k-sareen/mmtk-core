@@ -253,7 +253,6 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             vec![
                 MetadataSpec::OnSide(Block::DEFRAG_STATE_TABLE),
                 MetadataSpec::OnSide(Block::MARK_TABLE),
-                MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC,
@@ -265,7 +264,6 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 MetadataSpec::OnSide(Line::MARK_TABLE),
                 MetadataSpec::OnSide(Block::DEFRAG_STATE_TABLE),
                 MetadataSpec::OnSide(Block::MARK_TABLE),
-                MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC,
@@ -278,6 +276,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     pub fn new(
         args: crate::policy::space::PlanCreateSpaceArgs<VM>,
         space_args: ImmixSpaceArgs,
+        owner_mask: u8,
     ) -> Self {
         #[cfg(feature = "immix_non_moving")]
         info!(
@@ -317,7 +316,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 )
             },
             common,
-            chunk_map: ChunkMap::new(),
+            chunk_map: ChunkMap::new(owner_mask),
             line_mark_state: AtomicU8::new(Line::RESET_MARK_STATE),
             line_unavail_state: AtomicU8::new(Line::RESET_MARK_STATE),
             lines_consumed: AtomicUsize::new(0),

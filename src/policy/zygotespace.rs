@@ -181,6 +181,7 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
             immix_space: ImmixSpace::new(
                 args,
                 immix_space_args,
+                ZYGOTE_CHUNK_MASK,
             ),
             created_zygote_space: false,
         }

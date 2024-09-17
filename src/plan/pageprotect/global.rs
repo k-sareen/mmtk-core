@@ -105,6 +105,9 @@ impl<VM: VMBinding> PageProtect<VM> {
             global_side_metadata_specs: SideMetadataContext::new_global_specs(&[]),
         };
 
+        // Add the chunk mark table to the list of global metadata
+        plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+
         let ret = PageProtect {
             space: LargeObjectSpace::new(
                 plan_args.get_space_args("pageprotect", true, VMRequest::discontiguous()),

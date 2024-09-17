@@ -7,6 +7,12 @@ use crate::vm::VMBinding;
 use spin::Mutex;
 use std::ops::Range;
 
+pub const CHUNK_MARK_BIT_MASK: u8 = 0b001;
+pub const INVALID_CHUNK_MASK: u8 = 0b000;
+pub const IMMIX_CHUNK_MASK: u8 = 0b010;
+pub const MS_CHUNK_MASK: u8 = 0b100;
+pub const ZYGOTE_CHUNK_MASK: u8 = 0b110;
+
 /// Data structure to reference a MMTk 4 MB chunk.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Eq)]
@@ -52,13 +58,16 @@ pub enum ChunkState {
     Free = 0,
     /// The chunk is allocated.
     Allocated = 1,
+    /// The chunk is allocated but not owned by me.
+    NotMine = 2,
 }
 
 /// A byte-map to record all the allocated chunks.
 /// A plan can use this to maintain records for the chunks that they used, and the states of the chunks.
-/// Any plan that uses the chunk map should include the `ALLOC_TABLE` spec in their local sidemetadata specs
+/// Any plan that uses the chunk map should include the `ALLOC_TABLE` spec in their global side-metadata specs
 pub struct ChunkMap {
     chunk_range: Mutex<Range<Chunk>>,
+    owner: u8,
 }
 
 impl ChunkMap {
@@ -66,21 +75,41 @@ impl ChunkMap {
     pub const ALLOC_TABLE: SideMetadataSpec =
         crate::util::metadata::side_metadata::spec_defs::CHUNK_MARK;
 
-    pub fn new() -> Self {
+    pub fn new(owner: u8) -> Self {
+        assert!(owner & CHUNK_MARK_BIT_MASK == 0, "Last bit in chunk owner {:#010b} needs to be free for the chunk mark bit!", owner);
         Self {
             chunk_range: Mutex::new(Chunk::ZERO..Chunk::ZERO),
+            owner,
         }
     }
 
     /// Set chunk state
     pub fn set(&self, chunk: Chunk, state: ChunkState) {
-        // Do nothing if the chunk is already in the expected state.
-        if self.get(chunk) == state {
+        // Do nothing if the chunk is already in the expected state or it is not allocated by us.
+        let chunk_state = self.get(chunk);
+        if chunk_state == state || chunk_state == ChunkState::NotMine {
             return;
         }
+        let encoded_byte = if state == ChunkState::Free {
+            debug_assert!(
+                self.get_owner(chunk) == self.owner && chunk_state == ChunkState::Allocated,
+                "The {:?} should be owned by me ({:#010b}) if we're setting it to Free",
+                chunk,
+                self.owner,
+            );
+            INVALID_CHUNK_MASK
+        } else {
+            debug_assert!(
+                self.get_owner(chunk) == INVALID_CHUNK_MASK && chunk_state == ChunkState::Free,
+                "The {:?} should be not be owned by anyone ({:#010b}) if we're setting it to Allocated",
+                chunk,
+                self.get_owner(chunk),
+            );
+            self.owner | CHUNK_MARK_BIT_MASK
+        };
         // Update alloc byte
-        unsafe { Self::ALLOC_TABLE.store::<u8>(chunk.start(), state as u8) };
-        // If this is a newly allcoated chunk, then expand the chunk range.
+        unsafe { Self::ALLOC_TABLE.store::<u8>(chunk.start(), encoded_byte as u8) };
+        // If this is a newly allocated chunk, then expand the chunk range.
         if state == ChunkState::Allocated {
             debug_assert!(!chunk.start().is_zero());
             let mut range = self.chunk_range.lock();
@@ -99,11 +128,40 @@ impl ChunkMap {
     /// Get chunk state
     pub fn get(&self, chunk: Chunk) -> ChunkState {
         let byte = unsafe { Self::ALLOC_TABLE.load::<u8>(chunk.start()) };
-        match byte {
-            0 => ChunkState::Free,
-            1 => ChunkState::Allocated,
+        let mine = self.get_owner(chunk) == self.owner;
+        match (byte & CHUNK_MARK_BIT_MASK) {
+            0 => {
+                debug_assert!(
+                    self.get_owner(chunk) == INVALID_CHUNK_MASK,
+                    "{:?} is Free ({:#010b}) but has an owner {:#010b}",
+                    chunk,
+                    unsafe { Self::ALLOC_TABLE.load::<u8>(chunk.start()) },
+                    self.get_owner(chunk),
+                );
+                ChunkState::Free
+            },
+            1 => {
+                debug_assert!(
+                    self.get_owner(chunk) != INVALID_CHUNK_MASK,
+                    "{:?} is Allocated ({:#010b}) but has no owner {:#010b}",
+                    chunk,
+                    unsafe { Self::ALLOC_TABLE.load::<u8>(chunk.start()) },
+                    self.get_owner(chunk),
+                );
+                if mine {
+                    ChunkState::Allocated
+                } else {
+                    ChunkState::NotMine
+                }
+            },
             _ => unreachable!(),
         }
+    }
+
+    /// Get the encoded owner of a given chunk.
+    pub fn get_owner(&self, chunk: Chunk) -> u8 {
+        let byte = unsafe { Self::ALLOC_TABLE.load::<u8>(chunk.start()) };
+        byte & !CHUNK_MARK_BIT_MASK
     }
 
     /// A range of all chunks in the heap.
@@ -125,11 +183,5 @@ impl ChunkMap {
             work_packets.push(func(chunk));
         }
         work_packets
-    }
-}
-
-impl Default for ChunkMap {
-    fn default() -> Self {
-        Self::new()
     }
 }

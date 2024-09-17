@@ -18,6 +18,7 @@ use crate::scheduler::GCWorkScheduler;
 use crate::scheduler::GCWorker;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
+use crate::util::heap::chunk_map::IMMIX_CHUNK_MASK;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::Address;
@@ -239,6 +240,10 @@ impl<VM: VMBinding> GenImmix<VM> {
             global_side_metadata_specs:
                 crate::plan::generational::new_generational_global_metadata_specs::<VM>(),
         };
+
+        // Add the chunk mark table to the list of global metadata
+        plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+
         let immix_space = ImmixSpace::new(
             plan_args.get_space_args("immix_mature", true, VMRequest::discontiguous()),
             ImmixSpaceArgs {
@@ -249,6 +254,7 @@ impl<VM: VMBinding> GenImmix<VM> {
                 // In GenImmix, young objects are not allocated in ImmixSpace directly.
                 mixed_age: false,
             },
+            IMMIX_CHUNK_MASK,
         );
 
         let genimmix = GenImmix {

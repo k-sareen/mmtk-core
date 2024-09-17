@@ -92,6 +92,9 @@ impl<VM: VMBinding> MarkSweep<VM> {
         let mut global_side_metadata_specs = SideMetadataContext::new_global_specs(&[]);
         MarkSweepSpace::<VM>::extend_global_side_metadata_specs(&mut global_side_metadata_specs);
 
+        // Add the chunk mark table to the list of global metadata
+        global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+
         let mut plan_args = CreateSpecificPlanArgs {
             global_args: args,
             constraints: &MS_CONSTRAINTS,

@@ -208,6 +208,9 @@ impl<VM: VMBinding> GenCopy<VM> {
                 crate::plan::generational::new_generational_global_metadata_specs::<VM>(),
         };
 
+        // Add the chunk mark table to the list of global metadata
+        plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+
         let copyspace0 = CopySpace::new(
             plan_args.get_space_args("copyspace0", true, VMRequest::discontiguous()),
             false,
