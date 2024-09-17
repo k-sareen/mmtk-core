@@ -501,7 +501,7 @@ pub(crate) fn create_space_mapping<VM: VMBinding>(
             plan.common().get_nonmoving(),
         ));
         reserved.n_free_list += 1;
-        if plan.common().is_zygote_process() && !plan.common().has_zygote_space() {
+        if plan.common().is_zygote() {
             vec.push((
                 AllocatorSelector::Immix(reserved.n_immix),
                 plan.common().get_zygote().get_immix_space(),

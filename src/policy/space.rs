@@ -619,6 +619,10 @@ impl<VM: VMBinding> CommonSpace<VM> {
         }
     }
 
+    pub fn is_zygote(&self) -> bool {
+        self.global_state.is_zygote_process() && !self.global_state.has_zygote_space()
+    }
+
     pub fn vm_map(&self) -> &'static dyn VMMap {
         self.vm_map
     }

@@ -73,11 +73,16 @@ impl<VM: VMBinding> Plan for Immix<VM> {
     }
 
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
+        let immix_space = if unlikely(self.common().is_zygote()) {
+            self.common().get_zygote().get_immix_space()
+        } else {
+            &self.immix_space
+        };
         Self::schedule_immix_full_heap_collection::<
             Immix<VM>,
             ImmixGCWorkContext<VM, TRACE_KIND_FAST>,
             ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>,
-        >(self, &self.immix_space, scheduler)
+        >(self, immix_space, scheduler)
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
@@ -101,12 +106,18 @@ impl<VM: VMBinding> Plan for Immix<VM> {
     fn release(&mut self, tls: VMWorkerThread) {
         self.common.release(tls, true);
         // release the collected region
-        self.last_gc_was_defrag
-            .store(self.immix_space.release(true), Ordering::Relaxed);
+        if unlikely(self.common().is_zygote()) {
+            let zygotespace = self.common().get_zygote().get_immix_space();
+            self.last_gc_was_defrag
+                .store(zygotespace.in_defrag(), Ordering::Relaxed);
+        } else {
+            self.last_gc_was_defrag
+                .store(self.immix_space.release(true), Ordering::Relaxed);
+        };
     }
 
     fn prepare_worker(&self, worker: &mut GCWorker<Self::VM>) {
-        if unlikely(self.common().is_zygote_process() && !self.common().has_zygote_space()) {
+        if unlikely(self.common().is_zygote()) {
             // We are the Zygote process and we have not created the ZygoteSpace yet so use the
             // ImmixSpace inside the ZygoteSpace
             unsafe {

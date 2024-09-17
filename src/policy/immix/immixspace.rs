@@ -361,6 +361,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             user_triggered_collection,
             self.reusable_blocks.len() == 0,
             full_heap_system_gc,
+            self.common().is_zygote(),
         );
         self.defrag.in_defrag()
     }

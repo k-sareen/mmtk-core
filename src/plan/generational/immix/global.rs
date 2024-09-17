@@ -9,6 +9,7 @@ use crate::plan::global::CreateSpecificPlanArgs;
 use crate::plan::AllocationSemantics;
 use crate::plan::Plan;
 use crate::plan::PlanConstraints;
+use crate::plan::immix;
 use crate::policy::gc_work::TraceKind;
 use crate::policy::immix::ImmixSpace;
 use crate::policy::immix::ImmixSpaceArgs;
@@ -24,6 +25,7 @@ use crate::util::heap::VMRequest;
 use crate::util::Address;
 use crate::util::ObjectReference;
 use crate::util::VMWorkerThread;
+use crate::util::rust_util::unlikely;
 use crate::vm::*;
 use crate::ObjectQueue;
 
@@ -111,11 +113,16 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
             debug!("Nursery GC");
             scheduler.schedule_common_work::<GenImmixNurseryGCWorkContext<VM>>(self);
         } else {
+            let immix_space = if unlikely(self.common().is_zygote()) {
+                self.common().get_zygote().get_immix_space()
+            } else {
+                &self.immix_space
+            };
             crate::plan::immix::Immix::schedule_immix_full_heap_collection::<
                 GenImmix<VM>,
                 GenImmixMatureGCWorkContext<VM, TRACE_KIND_FAST>,
                 GenImmixMatureGCWorkContext<VM, TRACE_KIND_DEFRAG>,
-            >(self, &self.immix_space, scheduler);
+            >(self, immix_space, scheduler);
         }
     }
 

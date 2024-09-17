@@ -127,11 +127,16 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
             info!("Full heap GC");
             use crate::plan::immix::Immix;
             use crate::policy::immix::{TRACE_KIND_DEFRAG, TRACE_KIND_FAST};
+            let immix_space = if unlikely(self.common().is_zygote()) {
+                self.common().get_zygote().get_immix_space()
+            } else {
+                &self.immix.immix_space
+            };
             Immix::schedule_immix_full_heap_collection::<
                 StickyImmix<VM>,
                 StickyImmixMatureGCWorkContext<VM, TRACE_KIND_FAST>,
                 StickyImmixMatureGCWorkContext<VM, TRACE_KIND_DEFRAG>,
-            >(self, &self.immix.immix_space, scheduler);
+            >(self, immix_space, scheduler);
         }
     }
 

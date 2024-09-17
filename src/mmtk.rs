@@ -472,6 +472,12 @@ impl<VM: VMBinding> MMTK<VM> {
         self.state.has_zygote_space()
     }
 
+    /// Is the current process the Zygote AND is it going to allocate into the ZygoteSpace? This is a
+    /// useful check for many places.
+    pub fn is_zygote(&self) -> bool {
+        self.is_zygote_process() && !self.has_zygote_space()
+    }
+
     pub fn set_has_zygote_space(&self, has_zygote_space: bool) {
         self.state.set_has_zygote_space(has_zygote_space)
     }

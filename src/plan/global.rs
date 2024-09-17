@@ -620,7 +620,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
     }
 
     pub fn get_used_pages(&self) -> usize {
-        let zygote_pages = if self.is_zygote_process() && !self.has_zygote_space() {
+        let zygote_pages = if self.is_zygote() {
             self.get_zygote().reserved_pages()
         } else {
             0
@@ -639,6 +639,10 @@ impl<VM: VMBinding> CommonPlan<VM> {
 
     pub fn has_zygote_space(&self) -> bool {
         self.base.global_state.has_zygote_space()
+    }
+
+    pub fn is_zygote(&self) -> bool {
+        self.is_zygote_process() && !self.has_zygote_space()
     }
 
     pub fn trace_object<Q: ObjectQueue>(
@@ -708,7 +712,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         self.immortal.release();
         self.los.release(full_heap);
         self.nonmoving.release();
-        if unlikely(self.is_zygote_process() && !self.has_zygote_space()) {
+        if unlikely(self.is_zygote()) {
             if let Some(zygote_space) = self.zygote.as_mut() {
                 let is_pre_first_zygote_fork_gc =
                     self.base.global_state.is_pre_first_zygote_fork_gc();

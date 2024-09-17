@@ -83,12 +83,14 @@ impl Defrag {
         user_triggered: bool,
         exhausted_reusable_space: bool,
         full_heap_system_gc: bool,
+        is_zygote: bool,
     ) {
         let in_defrag = super::DEFRAG
             && (emergency_collection
                 || (collection_attempts > 1)
                 || !exhausted_reusable_space
                 || super::STRESS_DEFRAG
+                || is_zygote
                 || (collect_whole_heap && user_triggered && full_heap_system_gc));
         // println!("Defrag: {}", in_defrag);
         self.in_defrag_collection
