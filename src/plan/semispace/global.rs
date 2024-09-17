@@ -2,7 +2,7 @@ use super::gc_work::SSGCWorkContext;
 use crate::plan::global::CommonPlan;
 use crate::plan::global::CreateGeneralPlanArgs;
 use crate::plan::global::CreateSpecificPlanArgs;
-use crate::plan::semispace::mutator::ALLOCATOR_MAPPING;
+use crate::plan::semispace::mutator::{ALLOCATOR_MAPPING_DEFAULT, ALLOCATOR_MAPPING_ZYGOTE};
 use crate::plan::AllocationSemantics;
 use crate::plan::Plan;
 use crate::plan::PlanConstraints;
@@ -15,12 +15,13 @@ use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::util::opaque_pointer::VMWorkerThread;
+use crate::util::rust_util::{likely, unlikely};
 use crate::{plan::global::BasePlan, vm::VMBinding};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mmtk_macros::{HasSpaces, PlanTraceObject};
 
-use enum_map::EnumMap;
+use enum_map::{enum_map, EnumMap};
 
 #[derive(HasSpaces, PlanTraceObject)]
 pub struct SemiSpace<VM: VMBinding> {
@@ -44,32 +45,66 @@ pub const SS_CONSTRAINTS: PlanConstraints = PlanConstraints {
     ..PlanConstraints::default()
 };
 
+lazy_static! {
+    pub(crate) static ref SS_COPY_CONFIG_DEFAULT: EnumMap<CopySemantics, CopySelector> = enum_map! {
+        CopySemantics::DefaultCopy => CopySelector::CopySpace(0),
+        _ => CopySelector::Unused,
+    };
+
+    pub(crate) static ref SS_COPY_CONFIG_ZYGOTE: EnumMap<CopySemantics, CopySelector> = enum_map! {
+        CopySemantics::DefaultCopy => CopySelector::Immix(0),
+        _ => CopySelector::Unused,
+    };
+}
+
 impl<VM: VMBinding> Plan for SemiSpace<VM> {
     fn constraints(&self) -> &'static PlanConstraints {
         &SS_CONSTRAINTS
     }
 
     fn create_copy_config(&'static self) -> CopyConfig<Self::VM> {
-        use enum_map::enum_map;
+        let zygote = self.common().is_zygote();
         CopyConfig {
-            copy_mapping: enum_map! {
-                CopySemantics::DefaultCopy => CopySelector::CopySpace(0),
-                _ => CopySelector::Unused,
+            copy_mapping: if likely(!zygote) {
+                *SS_COPY_CONFIG_DEFAULT
+            } else {
+                *SS_COPY_CONFIG_ZYGOTE
             },
-            space_mapping: vec![
-                // // The tospace argument doesn't matter, we will rebind before a GC anyway.
-                (CopySelector::CopySpace(0), &self.copyspace0),
-            ],
+            space_mapping: if likely(!zygote) {
+                vec![
+                    // The tospace argument doesn't matter, we will rebind before a GC anyway.
+                    (CopySelector::CopySpace(0), &self.copyspace0),
+                ]
+            } else {
+                vec![
+                    (CopySelector::Immix(0), self.common().get_zygote().get_immix_space()),
+                ]
+            },
             constraints: &SS_CONSTRAINTS,
         }
     }
 
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
-        scheduler.schedule_common_work::<SSGCWorkContext<VM>>(self);
+        // XXX(kunals): We have to manually say what trace kind we want when we're the Zygote
+        if self.common().is_zygote() {
+            use crate::policy::immix::{TRACE_KIND_DEFRAG, TRACE_KIND_FAST};
+            crate::plan::immix::Immix::schedule_immix_full_heap_collection::<
+                SemiSpace<VM>,
+                SSGCWorkContext<VM, TRACE_KIND_FAST>,
+                SSGCWorkContext<VM, TRACE_KIND_DEFRAG>,
+            >(self, self.common().get_zygote().get_immix_space(), scheduler);
+        } else {
+            use crate::policy::gc_work::DEFAULT_TRACE;
+            scheduler.schedule_common_work::<SSGCWorkContext<VM, DEFAULT_TRACE>>(self);
+        }
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
-        &ALLOCATOR_MAPPING
+        if likely(!self.common().is_zygote()) {
+            &ALLOCATOR_MAPPING_DEFAULT
+        } else {
+            &ALLOCATOR_MAPPING_ZYGOTE
+        }
     }
 
     fn prepare(&mut self, tls: VMWorkerThread) {
@@ -81,25 +116,38 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
             self.get_collection_reserved_pages(),
         );
 
-        self.hi
-            .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst); // flip the semi-spaces
-                                                                       // prepare each of the collected regions
-        let hi = self.hi.load(Ordering::SeqCst);
-        self.copyspace0.prepare(hi);
-        self.copyspace1.prepare(!hi);
-        self.fromspace_mut()
-            .set_copy_for_sft_trace(Some(CopySemantics::DefaultCopy));
-        self.tospace_mut().set_copy_for_sft_trace(None);
+        if likely(!self.common().is_zygote()) {
+            self.hi
+                .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst); // flip the semi-spaces
+                                                                           // prepare each of the collected regions
+            let hi = self.hi.load(Ordering::SeqCst);
+            self.copyspace0.prepare(hi);
+            self.copyspace1.prepare(!hi);
+        }
     }
 
     fn prepare_worker(&self, worker: &mut GCWorker<VM>) {
-        unsafe { worker.get_copy_context_mut().copy[0].assume_init_mut() }.rebind(self.tospace());
+        if likely(!self.common().is_zygote()) {
+            let copy_config = worker.get_copy_context_mut();
+            if copy_config.config.copy_mapping != *SS_COPY_CONFIG_DEFAULT {
+                copy_config.config.copy_mapping = *SS_COPY_CONFIG_DEFAULT;
+            }
+            unsafe { worker.get_copy_context_mut().copy[0].assume_init_mut() }.rebind(self.tospace());
+        } else {
+            assert_eq!(
+                worker.get_copy_context_mut().config.copy_mapping,
+                *SS_COPY_CONFIG_ZYGOTE,
+                "Worker copy config for Zygote is not ImmixAllocator!",
+            );
+        }
     }
 
     fn release(&mut self, tls: VMWorkerThread) {
         self.common.release(tls, true);
         // release the collected region
-        self.fromspace().release();
+        if likely(!self.common().is_zygote()) {
+            self.fromspace().release();
+        }
     }
 
     fn collection_required(&self, space_full: bool, _space: Option<SpaceStats<Self::VM>>) -> bool {

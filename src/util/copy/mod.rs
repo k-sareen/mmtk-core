@@ -60,7 +60,7 @@ pub struct GCWorkerCopyContext<VM: VMBinding> {
     /// Copy allocators for ImmixSpace
     pub immix_hybrid: [MaybeUninit<ImmixHybridCopyContext<VM>>; MAX_IMMIX_HYBRID_COPY_ALLOCATORS],
     /// The config for the plan
-    config: CopyConfig<VM>,
+    pub config: CopyConfig<VM>,
 }
 
 impl<VM: VMBinding> GCWorkerCopyContext<VM> {
@@ -273,7 +273,7 @@ impl CopySemantics {
 }
 
 #[repr(C, u8)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) enum CopySelector {
     CopySpace(u8),
     Immix(u8),
