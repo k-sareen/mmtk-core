@@ -527,7 +527,7 @@ pub fn total_bytes<VM: VMBinding>(mmtk: &MMTK<VM>) -> usize {
     mmtk.get_plan().get_total_pages() << LOG_BYTES_IN_PAGE
 }
 
-/// Trigger a garbage collection as requested by the user.
+/// Trigger a garbage collection as requested by the user. Returns whether a GC was ran or not.
 ///
 /// Arguments:
 /// * `mmtk`: A reference to an MMTk instance.
@@ -537,8 +537,8 @@ pub fn handle_user_collection_request<VM: VMBinding>(
     tls: VMMutatorThread,
     force: bool,
     exhaustive: bool
-) {
-    mmtk.handle_user_collection_request(tls, force, exhaustive);
+) -> bool {
+    mmtk.handle_user_collection_request(tls, force, exhaustive)
 }
 
 /// Trigger the pre-first Zygote fork garbage collection. This GC will perform a full defrag GC to
