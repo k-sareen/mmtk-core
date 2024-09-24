@@ -16,7 +16,7 @@ use crate::util::heap::layout::vm_layout::VMLayout;
 use crate::util::heap::layout::{self, Mmapper, VMMap};
 use crate::util::heap::HeapMeta;
 use crate::util::opaque_pointer::*;
-use crate::util::options::Options;
+use crate::util::options::{Options, PlanSelector};
 use crate::util::reference_processor::ReferenceProcessors;
 #[cfg(feature = "sanity")]
 use crate::util::sanity::sanity_checker::SanityChecker;
@@ -207,6 +207,15 @@ impl<VM: VMBinding> MMTK<VM> {
         use crate::util::heap::layout::vm_layout::vm_layout;
         let heap_pages = (vm_layout().heap_end - vm_layout().heap_start) >> LOG_BYTES_IN_PAGE;
         MMAPPER.quarantine_address_range(vm_layout().heap_start, heap_pages);
+
+        // XXX(kunals): If we are using NoGC then mmap and zero the entire space. This means that
+        // each page in the heap has been touched at least once and hence the mutator should not
+        // get page faults when allocating. This can drastically improve the performance of the
+        // mutator
+        if let PlanSelector::NoGC = *options.plan {
+            MMAPPER.ensure_mapped(vm_layout().heap_start, heap_pages);
+            crate::util::memory::zero(vm_layout().heap_start, heap_pages << LOG_BYTES_IN_PAGE);
+        }
 
         MMTK {
             options,
