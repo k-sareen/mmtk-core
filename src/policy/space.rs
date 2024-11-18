@@ -10,7 +10,7 @@ use crate::util::ObjectReference;
 
 use crate::util::heap::layout::vm_layout::{vm_layout, LOG_BYTES_IN_CHUNK};
 use crate::util::heap::{PageResource, VMRequest};
-use crate::util::options::Options;
+use crate::util::options::{Options, PlanSelector};
 use crate::vm::{ActivePlan, Collection};
 
 use crate::util::constants::{LOG_BYTES_IN_MBYTE, LOG_BYTES_IN_PAGE};
@@ -170,7 +170,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     }
 
                     // TODO: Concurrent zeroing
-                    if self.common().zeroed {
+                    if self.common().zeroed && *(self.get_gc_trigger().options.plan) != PlanSelector::NoGC {
                         memory::zero(res.start, bytes);
                     }
 

@@ -24,7 +24,7 @@ pub struct GCTrigger<VM: VMBinding> {
     /// The triggering policy.
     pub policy: Box<dyn GCTriggerPolicy<VM>>,
     gc_requester: Arc<GCRequester<VM>>,
-    options: Arc<Options>,
+    pub options: Arc<Options>,
     state: Arc<GlobalState>,
 }
 

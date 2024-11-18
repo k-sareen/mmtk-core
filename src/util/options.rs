@@ -29,7 +29,7 @@ pub enum NurseryZeroingOptions {
 
 /// Select a GC plan for MMTk.
 #[repr(C)]
-#[derive(Copy, Clone, EnumString, Debug)]
+#[derive(Copy, Clone, PartialEq, EnumString, Debug)]
 pub enum PlanSelector {
     /// Allocation only without a collector. This is usually used for debugging.
     /// Similar to OpenJDK epsilon (<https://openjdk.org/jeps/318>).

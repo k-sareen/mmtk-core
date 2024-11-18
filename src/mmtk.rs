@@ -212,7 +212,7 @@ impl<VM: VMBinding> MMTK<VM> {
         // each page in the heap has been touched at least once and hence the mutator should not
         // get page faults when allocating. This can drastically improve the performance of the
         // mutator
-        if let PlanSelector::NoGC = *options.plan {
+        if *options.plan == PlanSelector::NoGC {
             MMAPPER.ensure_mapped(vm_layout().heap_start, heap_pages);
             crate::util::memory::zero(vm_layout().heap_start, heap_pages << LOG_BYTES_IN_PAGE);
         }
