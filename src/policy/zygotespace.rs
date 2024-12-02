@@ -127,6 +127,10 @@ impl<VM: VMBinding> Space<VM> for ZygoteSpace<VM> {
         self.immix_space.get_page_resource()
     }
 
+    fn maybe_get_page_resource_mut(&mut self) -> Option<&mut dyn PageResource<VM>> {
+        self.immix_space.maybe_get_page_resource_mut()
+    }
+
     fn common(&self) -> &CommonSpace<VM> {
         self.immix_space.common()
     }
@@ -273,6 +277,14 @@ impl<VM: VMBinding> Space<VM> for Option<ZygoteSpace<VM>> {
 
     fn get_page_resource(&self) -> &dyn PageResource<VM> {
         panic!("Cannot call get_page_resource on Option<ZygoteSpace<VM>>")
+    }
+
+    fn maybe_get_page_resource_mut(&mut self) -> Option<&mut dyn PageResource<VM>> {
+        if let Some(space) = self.as_mut() {
+            space.maybe_get_page_resource_mut()
+        } else {
+            None
+        }
     }
 
     fn common(&self) -> &CommonSpace<VM> {

@@ -199,7 +199,7 @@ impl<VM: VMBinding> GenerationalPlanExt<VM> for GenCopy<VM> {
         object: ObjectReference,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
-        self.gen.trace_object_nursery(queue, object, worker)
+        self.gen.trace_object_nursery::<Q, KIND>(queue, object, worker)
     }
 }
 
