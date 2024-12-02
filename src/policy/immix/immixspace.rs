@@ -102,6 +102,19 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         }
     }
 
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+        // If we never move objects, look no further.
+        if super::NEVER_MOVE_OBJECTS {
+            return None;
+        }
+
+        if object_forwarding::is_forwarded::<VM>(object) {
+            object_forwarding::read_potential_forwarding_pointer::<VM>(object)
+        } else {
+            None
+        }
+    }
+
     fn is_live(&self, object: ObjectReference) -> bool {
         // If the mark bit is set, it is live.
         if self.is_marked(object) {

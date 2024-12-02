@@ -162,6 +162,28 @@ pub fn read_forwarding_pointer<VM: VMBinding>(object: ObjectReference) -> Object
     }
 }
 
+/// Read the potential forwarding pointer of an object. This function is used by
+/// the ART binding for arbitrary addresses which may-or-may not be actual
+/// objects.
+pub fn read_potential_forwarding_pointer<VM: VMBinding>(object: ObjectReference) -> Option<ObjectReference> {
+    debug_assert!(
+        is_forwarded_or_being_forwarded::<VM>(object),
+        "read_potential_forwarding_pointer called for object {:?} that has not started forwarding!",
+        object,
+    );
+
+    // We write the forwarding poiner. We know it is an object reference.
+    unsafe {
+        ObjectReference::from_raw_address(crate::util::Address::from_usize(
+            VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+                object,
+                Some(FORWARDING_POINTER_MASK),
+                Ordering::SeqCst,
+            ) as usize
+        ))
+    }
+}
+
 /// Write the forwarding pointer of an object.
 /// This function is called on being_forwarded objects.
 pub fn write_forwarding_pointer<VM: VMBinding>(

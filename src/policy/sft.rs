@@ -31,6 +31,11 @@ pub trait SFT {
         None
     }
 
+    /// Get potential forwarding pointer if the object is forwarded.
+    fn get_potential_forwarded_object(&self, _object: ObjectReference) -> Option<ObjectReference> {
+        None
+    }
+
     /// Is the object live, determined by the policy?
     fn is_live(&self, object: ObjectReference) -> bool;
 

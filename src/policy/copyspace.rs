@@ -73,6 +73,18 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
         }
     }
 
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+        if !self.is_from_space() {
+            return None;
+        }
+
+        if object_forwarding::is_forwarded::<VM>(object) {
+            object_forwarding::read_potential_forwarding_pointer::<VM>(object)
+        } else {
+            None
+        }
+    }
+
     #[cfg(feature = "is_mmtk_object")]
     fn is_mmtk_object(&self, addr: Address) -> bool {
         crate::util::metadata::vo_bit::is_vo_bit_set_for_addr::<VM>(addr).is_some()

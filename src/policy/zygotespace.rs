@@ -56,6 +56,10 @@ impl<VM: VMBinding> SFT for ZygoteSpace<VM> {
         self.immix_space.get_forwarded_object(object)
     }
 
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+        self.immix_space.get_potential_forwarded_object(object)
+    }
+
     fn is_live(&self, object: ObjectReference) -> bool {
         if likely(self.created_zygote_space) {
             // If the object is inside the Zygote address space and we have created it,
@@ -335,6 +339,10 @@ impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
 
     fn get_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
         self.as_ref().unwrap().get_forwarded_object(object)
+    }
+
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+        self.as_ref().unwrap().get_potential_forwarded_object(object)
     }
 
     fn is_live(&self, object: ObjectReference) -> bool {

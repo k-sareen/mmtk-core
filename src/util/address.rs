@@ -585,6 +585,11 @@ impl ObjectReference {
         unsafe { SFT_MAP.get_unchecked(self.to_address::<VM>()) }.get_forwarded_object(self)
     }
 
+    /// Get potential forwarding pointer if the object is forwarded.
+    pub fn get_potential_forwarded_object<VM: VMBinding>(self) -> Option<Self> {
+        unsafe { SFT_MAP.get_unchecked(self.to_address::<VM>()) }.get_potential_forwarded_object(self)
+    }
+
     /// Is the object in any MMTk spaces?
     pub fn is_in_any_space<VM: VMBinding>(self) -> bool {
         unsafe { SFT_MAP.get_unchecked(self.to_address::<VM>()) }.is_in_space(self)
