@@ -476,7 +476,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
 
     /// This is called when a GC finished.
     /// Return whether this GC was a defrag GC, as a plan may want to know this.
-    pub fn end_of_gc(&mut self) -> bool {
+    pub fn end_of_gc(&self) -> bool {
         let did_defrag = self.defrag.in_defrag();
         if super::DEFRAG {
             self.defrag.reset_in_defrag();

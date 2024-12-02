@@ -444,10 +444,10 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         }
     }
 
-    pub fn end_of_gc(&mut self) {
-        let from = self.abandoned_in_gc.get_mut().unwrap();
-        let to = self.abandoned.get_mut().unwrap();
-        to.merge(from);
+    pub fn end_of_gc(&self) {
+        let mut from = self.abandoned_in_gc.lock().unwrap();
+        let mut to = self.abandoned.lock().unwrap();
+        to.merge(&mut *from);
 
         #[cfg(debug_assertions)]
         from.assert_empty();

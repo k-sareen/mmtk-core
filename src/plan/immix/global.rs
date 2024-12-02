@@ -111,7 +111,7 @@ impl<VM: VMBinding> Plan for Immix<VM> {
         }
     }
 
-    fn end_of_gc(&mut self, _tls: VMWorkerThread) {
+    fn end_of_gc(&self, _tls: VMWorkerThread) {
         if unlikely(self.common().is_zygote()) {
             let zygotespace = self.common().get_zygote().get_immix_space();
             self.last_gc_was_defrag
