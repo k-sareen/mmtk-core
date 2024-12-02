@@ -131,6 +131,24 @@ impl<VM: VMBinding> Plan for Immix<VM> {
         }
     }
 
+    fn prepare_worker(&self, worker: &mut GCWorker<Self::VM>) {
+        if unlikely(self.common().is_zygote()) {
+            // We are the Zygote process and we have not created the ZygoteSpace yet so use the
+            // ImmixSpace inside the ZygoteSpace
+            unsafe {
+                worker.get_copy_context_mut().immix[0].assume_init_mut()
+            }.rebind(self.common().get_zygote().get_immix_space());
+        } else {
+            // Either the runtime has a Zygote space or it is a command-line runtime
+            debug_assert!(
+                self.common().has_zygote_space()
+                    || (!self.common().is_zygote_process()
+                        && !*self.common().base.options.is_zygote_process)
+            );
+            unsafe { worker.get_copy_context_mut().immix[0].assume_init_mut() }.rebind(&self.immix_space);
+        }
+    }
+
     fn get_collection_reserved_pages(&self) -> usize {
         self.immix_space.defrag_headroom_pages()
     }
