@@ -192,7 +192,7 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
         } else if Self::virtual_memory_exhausted(plan.generational().unwrap()) {
             trace!("full heap: virtual memory exhausted");
             true
-        } else if self.common.is_zygote_process() && !self.common.has_zygote_space() {
+        } else if self.common.is_zygote() {
             // Always do full-heap GCs if we are the Zygote process and don't have a Zygote space yet
             true
         } else {

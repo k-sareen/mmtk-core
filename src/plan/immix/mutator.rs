@@ -28,7 +28,7 @@ pub fn immix_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMW
     .unwrap();
 
     let plan = mutator.plan.downcast_ref::<Immix<VM>>().unwrap();
-    if unlikely(plan.common().is_zygote_process() && !plan.common().has_zygote_space()) {
+    if unlikely(plan.common().is_zygote()) {
         immix_allocator.rebind(plan.common().get_zygote().get_immix_space());
     } else {
         // Either the runtime has a Zygote space or it is a command-line runtime

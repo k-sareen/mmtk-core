@@ -89,7 +89,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
     }
 
     fn prepare_worker(&self, worker: &mut GCWorker<Self::VM>) {
-        if unlikely(self.common().is_zygote_process() && !self.common().has_zygote_space()) {
+        if unlikely(self.common().is_zygote()) {
             // We are the Zygote process and we have not created the ZygoteSpace yet so use the
             // ImmixSpace inside the ZygoteSpace
             unsafe {
@@ -416,7 +416,7 @@ impl<VM: VMBinding> StickyImmix<VM> {
         {
             // Forces full heap collection
             true
-        } else if self.common().is_zygote_process() && !self.common().has_zygote_space() {
+        } else if self.common().is_zygote() {
             // Always do full-heap GCs if we are the Zygote process and don't have a Zygote space yet
             true
         } else {

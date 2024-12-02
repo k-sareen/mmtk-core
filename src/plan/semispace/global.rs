@@ -86,7 +86,7 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
 
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
         // XXX(kunals): We have to manually say what trace kind we want when we're the Zygote
-        if self.common().is_zygote() {
+        if unlikely(self.common().is_zygote()) {
             use crate::policy::immix::{TRACE_KIND_DEFRAG, TRACE_KIND_FAST};
             crate::plan::immix::Immix::schedule_immix_full_heap_collection::<
                 SemiSpace<VM>,
