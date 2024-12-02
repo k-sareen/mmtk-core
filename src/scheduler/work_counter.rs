@@ -44,8 +44,6 @@ pub(super) trait WorkCounter: WorkCounterClone + std::fmt::Debug + Send {
     fn name(&self) -> String;
     /// Return a reference to [`WorkCounterBase`]
     fn get_base(&self) -> &WorkCounterBase;
-    /// Return a mutatable reference to [`WorkCounterBase`]
-    fn get_base_mut(&mut self) -> &mut WorkCounterBase;
 }
 
 impl Clone for Box<dyn WorkCounter> {
@@ -127,10 +125,6 @@ impl WorkCounter for WorkDuration {
 
     fn get_base(&self) -> &WorkCounterBase {
         &self.base
-    }
-
-    fn get_base_mut(&mut self) -> &mut WorkCounterBase {
-        &mut self.base
     }
 }
 

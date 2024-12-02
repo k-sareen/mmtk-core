@@ -189,13 +189,10 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
     }
 
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
-        if object.is_null() {
-            return object;
-        }
         let mut sanity_checker = self.mmtk().sanity_checker.lock().unwrap();
         if !sanity_checker.refs.contains(&object) {
             // FIXME steveb consider VM-specific integrity check on reference.
-            assert!(object.is_sane(), "Invalid reference {:?}", object);
+            assert!(object.is_sane::<VM>(), "Invalid reference {:?}", object);
 
             // Let plan check object
             assert!(

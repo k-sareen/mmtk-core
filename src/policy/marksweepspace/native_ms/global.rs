@@ -7,7 +7,7 @@ use crate::{
     scheduler::{GCWorkScheduler, GCWorker},
     util::{
         copy::CopySemantics,
-        heap::FreeListPageResource,
+        heap::{FreeListPageResource, PageResource},
         metadata::{self, side_metadata::SideMetadataSpec, MetadataSpec},
         ObjectReference,
     },
@@ -42,17 +42,42 @@ pub enum BlockAcquireResult {
 }
 
 /// A mark sweep space.
+///
+/// The space and each free list allocator own some block lists.
+/// A block that is in use belongs to exactly one of the block lists. In this case,
+/// whoever owns a block list has exclusive access on the blocks in the list.
+/// There should be no data race to access blocks. A thread should NOT access a block list
+/// if it does not own the block list.
+///
+/// The table below roughly describes what we do in each phase.
+///
+/// | Phase          | Allocator local block lists                     | Global abandoned block lists                 | Chunk map |
+/// |----------------|-------------------------------------------------|----------------------------------------------|-----------|
+/// | Allocation     | Alloc from local                                | Move blocks from global to local block lists | -         |
+/// |                | Lazy: sweep local blocks                        |                                              |           |
+/// | GC - Prepare   | -                                               | -                                            | Find used chunks, reset block mark, bzero mark bit |
+/// | GC - Trace     | Trace object and mark blocks.                   | Trace object and mark blocks.                | -         |
+/// |                | No block list access.                           | No block list access.                        |           |
+/// | GC - Release   | Lazy: Move blocks to local unswept list         | Lazy: Move blocks to global unswept list     | _         |
+/// |                | Eager: Sweep local blocks                       | Eager: Sweep global blocks                   |           |
+/// |                | Both: Return local blocks to a temp global list |                                              |           |
+/// | GC - End of GC | -                                               | Merge the temp global lists                  | -         |
 pub struct MarkSweepSpace<VM: VMBinding> {
     pub common: CommonSpace<VM>,
     pr: FreeListPageResource<VM>,
     /// Allocation status for all chunks in MS space
-    pub chunk_map: ChunkMap,
+    chunk_map: ChunkMap,
     /// Work packet scheduler
     scheduler: Arc<GCWorkScheduler<VM>>,
     /// Abandoned blocks. If a mutator dies, all its blocks go to this abandoned block
-    /// lists. In a GC, we also 'flush' all the local blocks to this global pool so they
-    /// can be used by allocators from other threads.
-    pub abandoned: Mutex<AbandonedBlockLists>,
+    /// lists. We reuse blocks in these lists in the mutator phase.
+    /// The space needs to do the release work for these block lists.
+    abandoned: Mutex<AbandonedBlockLists>,
+    /// Abandoned blocks during a GC. Each allocator finishes doing release work, and returns
+    /// their local blocks to the global lists. Thus we do not need to do release work for
+    /// these block lists in the space. These lists are only filled in the release phase,
+    /// and will be moved to the abandoned lists above at the end of a GC.
+    abandoned_in_gc: Mutex<AbandonedBlockLists>,
 }
 
 pub struct AbandonedBlockLists {
@@ -62,21 +87,32 @@ pub struct AbandonedBlockLists {
 }
 
 impl AbandonedBlockLists {
-    fn move_consumed_to_unswept(&mut self) {
-        let mut i = 0;
-        while i < MI_BIN_FULL {
-            if !self.consumed[i].is_empty() {
-                self.unswept[i].append(&mut self.consumed[i]);
-            }
-            i += 1;
+    fn new() -> Self {
+        Self {
+            available: new_empty_block_lists(),
+            unswept: new_empty_block_lists(),
+            consumed: new_empty_block_lists(),
+        }
+    }
+
+    fn sweep_later<VM: VMBinding>(&mut self, space: &MarkSweepSpace<VM>) {
+        for i in 0..MI_BIN_FULL {
+            // Release free blocks
+            self.available[i].release_blocks(space);
+            self.consumed[i].release_blocks(space);
+            self.unswept[i].release_blocks(space);
+
+            // Move remaining blocks to unswept
+            self.unswept[i].append(&mut self.available[i]);
+            self.unswept[i].append(&mut self.consumed[i]);
         }
     }
 
     fn sweep<VM: VMBinding>(&mut self, space: &MarkSweepSpace<VM>) {
         for i in 0..MI_BIN_FULL {
-            self.available[i].sweep_blocks(space);
-            self.consumed[i].sweep_blocks(space);
-            self.unswept[i].sweep_blocks(space);
+            self.available[i].release_and_sweep_blocks(space);
+            self.consumed[i].release_and_sweep_blocks(space);
+            self.unswept[i].release_and_sweep_blocks(space);
 
             // As we have swept blocks, move blocks in the unswept list to available or consumed list.
             while let Some(block) = self.unswept[i].pop() {
@@ -86,6 +122,23 @@ impl AbandonedBlockLists {
                     self.consumed[i].push(block);
                 }
             }
+        }
+    }
+
+    fn merge(&mut self, other: &mut Self) {
+        for i in 0..MI_BIN_FULL {
+            self.available[i].append(&mut other.available[i]);
+            self.unswept[i].append(&mut other.unswept[i]);
+            self.consumed[i].append(&mut other.consumed[i]);
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn assert_empty(&self) {
+        for i in 0..MI_BIN_FULL {
+            assert!(self.available[i].is_empty());
+            assert!(self.unswept[i].is_empty());
+            assert!(self.consumed[i].is_empty());
         }
     }
 }
@@ -158,6 +211,10 @@ impl<VM: VMBinding> Space<VM> for MarkSweepSpace<VM> {
 
     fn get_page_resource(&self) -> &dyn crate::util::heap::PageResource<VM> {
         &self.pr
+    }
+
+    fn maybe_get_page_resource_mut(&mut self) -> Option<&mut dyn PageResource<VM>> {
+        Some(&mut self.pr)
     }
 
     fn initialize_sft(&self, sft_map: &mut dyn crate::policy::sft_map::SFTMap) {
@@ -246,12 +303,45 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             common,
             chunk_map: ChunkMap::new(MS_CHUNK_MASK),
             scheduler,
-            abandoned: Mutex::new(AbandonedBlockLists {
-                available: new_empty_block_lists(),
-                unswept: new_empty_block_lists(),
-                consumed: new_empty_block_lists(),
-            }),
+            abandoned: Mutex::new(AbandonedBlockLists::new()),
+            abandoned_in_gc: Mutex::new(AbandonedBlockLists::new()),
         }
+    }
+
+    pub fn is_marked(&self, object: ObjectReference) -> bool {
+        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst)
+    }
+
+    fn is_object_in_nursery(&self, object: ObjectReference) -> bool {
+        self.in_space(object) && !self.is_marked(object)
+    }
+
+    fn test_and_mark(&self, object: ObjectReference) -> bool {
+        loop {
+            let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
+                object,
+                None,
+                Ordering::SeqCst,
+            );
+            if old_value == 1 {
+                return false;
+            }
+
+            if VM::VMObjectModel::LOCAL_MARK_BIT_SPEC
+                .compare_exchange_metadata::<VM, u8>(
+                    object,
+                    old_value,
+                    1,
+                    None,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                break;
+            }
+        }
+        true
     }
 
     pub fn is_marked(&self, object: ObjectReference) -> bool {
@@ -295,7 +385,6 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         queue: &mut Q,
         object: ObjectReference,
     ) -> ObjectReference {
-        debug_assert!(!object.is_null());
         debug_assert!(
             self.in_space(object),
             "Cannot mark an object {} that was not alloced by free list allocator.",
@@ -356,18 +445,9 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         self.chunk_map.set(block.chunk(), ChunkState::Allocated);
     }
 
-    pub fn get_next_metadata_spec(&self) -> SideMetadataSpec {
-        Block::NEXT_BLOCK_TABLE
-    }
-
     pub fn prepare(&mut self, full_heap: bool) {
-        if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC {
-            for chunk in self.chunk_map.all_chunks() {
-                side.bzero_metadata(chunk.start(), Chunk::BYTES);
-            }
-        } else {
-            unimplemented!("in header mark bit is not supported");
-        }
+        #[cfg(debug_assertions)]
+        self.abandoned_in_gc.lock().unwrap().assert_empty();
 
         if self.common.needs_log_bit && full_heap {
             if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
@@ -378,15 +458,17 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 unimplemented!("in header log bit is not supported");
             }
         }
+
+        // # Safety: MarkSweepSpace reference is always valid within this collection cycle.
+        let space = unsafe { &*(self as *const Self) };
+        let work_packets = self
+            .chunk_map
+            .generate_tasks(|chunk| Box::new(PrepareChunkMap { space, chunk }));
+        self.scheduler.work_buckets[crate::scheduler::WorkBucketStage::Prepare]
+            .bulk_add(work_packets);
     }
 
     pub fn release(&mut self) {
-        // We sweep and release unmarked blocks here. For sweeping cells inside each block, we either
-        // do that when we release mutators (eager sweeping), or do that at allocation time (lazy sweeping).
-        use crate::scheduler::WorkBucketStage;
-        let work_packets = self.generate_sweep_tasks();
-        self.scheduler.work_buckets[WorkBucketStage::Release].bulk_add(work_packets);
-
         if cfg!(feature = "eager_sweeping") {
             // For eager sweeping, we have to sweep the lists that are abandoned to these global lists.
             let mut abandoned = self.abandoned.lock().unwrap();
@@ -395,8 +477,17 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             // For lazy sweeping, we just move blocks from consumed to unswept. When an allocator tries
             // to use them, they will sweep the block.
             let mut abandoned = self.abandoned.lock().unwrap();
-            abandoned.move_consumed_to_unswept();
+            abandoned.sweep_later(self);
         }
+    }
+
+    pub fn end_of_gc(&mut self) {
+        let from = self.abandoned_in_gc.get_mut().unwrap();
+        let to = self.abandoned.get_mut().unwrap();
+        to.merge(from);
+
+        #[cfg(debug_assertions)]
+        from.assert_empty();
     }
 
     /// Release a block.
@@ -445,42 +536,47 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         }
     }
 
-    pub fn generate_sweep_tasks(&self) -> Vec<Box<dyn GCWork<VM>>> {
-        // # Safety: ImmixSpace reference is always valid within this collection cycle.
-        let space = unsafe { &*(self as *const Self) };
-        self.chunk_map
-            .generate_tasks(|chunk| Box::new(SweepChunk { space, chunk }))
+    pub fn get_abandoned_block_lists(&self) -> &Mutex<AbandonedBlockLists> {
+        &self.abandoned
+    }
+
+    pub fn get_abandoned_block_lists_in_gc(&self) -> &Mutex<AbandonedBlockLists> {
+        &self.abandoned_in_gc
     }
 }
 
 use crate::scheduler::GCWork;
 use crate::MMTK;
 
-/// Chunk sweeping work packet.
-struct SweepChunk<VM: VMBinding> {
+struct PrepareChunkMap<VM: VMBinding> {
     space: &'static MarkSweepSpace<VM>,
     chunk: Chunk,
 }
 
-impl<VM: VMBinding> GCWork<VM> for SweepChunk<VM> {
+impl<VM: VMBinding> GCWork<VM> for PrepareChunkMap<VM> {
     fn do_work(&mut self, _worker: &mut GCWorker<VM>, _mmtk: &'static MMTK<VM>) {
         debug_assert!(self.space.chunk_map.get(self.chunk) == ChunkState::Allocated);
         // number of allocated blocks.
-        let mut allocated_blocks = 0;
-        // Iterate over all allocated blocks in this chunk.
-        for block in self
-            .chunk
+        let mut n_occupied_blocks = 0;
+        self.chunk
             .iter_region::<Block>()
             .filter(|block| block.get_state() != BlockState::Unallocated)
-        {
-            if !block.attempt_release(self.space) {
-                // Block is live. Increment the allocated block count.
-                allocated_blocks += 1;
-            }
-        }
-        // Set this chunk as free if there is not live blocks.
-        if allocated_blocks == 0 {
+            .for_each(|block| {
+                // Clear block mark
+                block.set_state(BlockState::Unmarked);
+                // Count occupied blocks
+                n_occupied_blocks += 1
+            });
+        if n_occupied_blocks == 0 {
+            // Set this chunk as free if there is no live blocks.
             self.space.chunk_map.set(self.chunk, ChunkState::Free)
+        } else {
+            // Otherwise this chunk is occupied, and we reset the mark bit if it is on the side.
+            if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC {
+                for chunk in self.space.chunk_map.all_chunks() {
+                    side.bzero_metadata(chunk.start(), Chunk::BYTES);
+                }
+            }
         }
     }
 }

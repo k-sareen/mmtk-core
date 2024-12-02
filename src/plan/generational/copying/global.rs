@@ -132,6 +132,10 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
         self.gen.get_used_pages() + self.tospace().reserved_pages()
     }
 
+    fn current_gc_may_move_object(&self) -> bool {
+        true
+    }
+
     /// Return the number of pages available for allocation. Assuming all future allocations goes to nursery.
     fn get_available_pages(&self) -> usize {
         // super.get_available_pages() / 2 to reserve pages for copying
@@ -195,7 +199,7 @@ impl<VM: VMBinding> GenerationalPlanExt<VM> for GenCopy<VM> {
         object: ObjectReference,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
-        self.gen.trace_object_nursery::<Q, KIND>(queue, object, worker)
+        self.gen.trace_object_nursery(queue, object, worker)
     }
 }
 

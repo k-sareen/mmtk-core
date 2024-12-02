@@ -102,6 +102,10 @@ impl<VM: VMBinding> Space<VM> for CopySpace<VM> {
         &self.pr
     }
 
+    fn maybe_get_page_resource_mut(&mut self) -> Option<&mut dyn PageResource<VM>> {
+        Some(&mut self.pr)
+    }
+
     fn common(&self) -> &CommonSpace<VM> {
         &self.common
     }
@@ -212,7 +216,6 @@ impl<VM: VMBinding> CopySpace<VM> {
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
         trace!("copyspace.trace_object(, {:?}, {:?})", object, semantics,);
-        debug_assert!(!object.is_null());
 
         // If this is not from space, we do not need to trace it (the object has been copied to the tosapce)
         if !self.is_from_space() {

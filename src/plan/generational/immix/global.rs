@@ -9,7 +9,6 @@ use crate::plan::global::CreateSpecificPlanArgs;
 use crate::plan::AllocationSemantics;
 use crate::plan::Plan;
 use crate::plan::PlanConstraints;
-use crate::plan::immix;
 use crate::policy::gc_work::TraceKind;
 use crate::policy::immix::ImmixSpace;
 use crate::policy::immix::ImmixSpaceArgs;
@@ -150,10 +149,7 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
         let full_heap = !self.gen.is_current_gc_nursery();
         self.gen.release(tls);
         if full_heap {
-            let did_defrag = self.immix_space.release(full_heap);
-            self.last_gc_was_defrag.store(did_defrag, Ordering::Relaxed);
-        } else {
-            self.last_gc_was_defrag.store(false, Ordering::Relaxed);
+            self.immix_space.release(full_heap);
         }
         self.last_gc_was_full_heap
             .store(full_heap, Ordering::Relaxed);
@@ -162,6 +158,17 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
     fn end_of_gc(&mut self, _tls: VMWorkerThread) {
         self.gen
             .set_next_gc_full_heap(CommonGenPlan::should_next_gc_be_full_heap(self));
+
+        let did_defrag = self.immix_space.end_of_gc();
+        self.last_gc_was_defrag.store(did_defrag, Ordering::Relaxed);
+    }
+
+    fn current_gc_may_move_object(&self) -> bool {
+        if self.is_current_gc_nursery() {
+            true
+        } else {
+            self.immix_space.in_defrag()
+        }
     }
 
     fn get_collection_reserved_pages(&self) -> usize {
@@ -235,7 +242,8 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
         object: ObjectReference,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
-        self.gen.trace_object_nursery::<Q, KIND>(queue, object, worker)
+        self.gen
+            .trace_object_nursery::<Q, KIND>(queue, object, worker)
     }
 }
 

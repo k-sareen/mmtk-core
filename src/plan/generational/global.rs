@@ -244,7 +244,11 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
         object: ObjectReference,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
-        assert!(KIND != TRACE_KIND_TRANSITIVE_PIN, "A copying nursery cannot pin objects!");
+        assert!(
+            KIND != TRACE_KIND_TRANSITIVE_PIN,
+            "A copying nursery cannot pin objects"
+        );
+
         // Evacuate nursery objects
         if self.nursery.in_space(object) {
             return self.nursery.trace_object::<Q>(

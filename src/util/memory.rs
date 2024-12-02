@@ -5,7 +5,8 @@ use crate::vm::{Collection, VMBinding};
 use bytemuck::NoUninit;
 use libc::{PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE};
 use std::io::{Error, Result};
-use sysinfo::{RefreshKind, System, SystemExt};
+use sysinfo::MemoryRefreshKind;
+use sysinfo::{RefreshKind, System};
 
 #[allow(unused)]
 const PROT_RW:  libc::c_int = PROT_READ | PROT_WRITE;
@@ -113,6 +114,12 @@ const MMAP_FLAGS: libc::c_int = libc::MAP_ANON | libc::MAP_PRIVATE | MAP_FIXED_N
 // MAP_FIXED is used instead of MAP_FIXED_NOREPLACE (which is not available on macOS). We are at the risk of overwriting pre-existing mappings.
 const MMAP_FLAGS: libc::c_int = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_FIXED;
 
+#[cfg(target_os = "linux")]
+const MMAP_PROT: libc::c_int = PROT_READ | PROT_WRITE | PROT_EXEC;
+#[cfg(target_os = "macos")]
+// PROT_EXEC cannot be used with PROT_READ on Apple Silicon
+const MMAP_PROT: libc::c_int = PROT_READ | PROT_WRITE;
+
 /// Strategy for performing mmap
 ///
 /// This currently supports switching between different huge page allocation
@@ -199,6 +206,7 @@ pub fn handle_mmap_error<VM: VMBinding>(error: Error, tls: VMThread) -> ! {
     match error.kind() {
         // From Rust nightly 2021-05-12, we started to see Rust added this ErrorKind.
         ErrorKind::OutOfMemory => {
+            eprintln!("{}", get_process_memory_maps());
             // Signal `MmapOutOfMemory`. Expect the VM to abort immediately.
             println!("{}", get_process_memory_maps());
             trace!("Signal MmapOutOfMemory!");
@@ -212,7 +220,7 @@ pub fn handle_mmap_error<VM: VMBinding>(error: Error, tls: VMThread) -> ! {
             if let Some(os_errno) = error.raw_os_error() {
                 // If it is OOM, we invoke out_of_memory() through the VM interface.
                 if os_errno == libc::ENOMEM {
-                    println!("{}", get_process_memory_maps());
+                    eprintln!("{}", get_process_memory_maps());
                     // Signal `MmapOutOfMemory`. Expect the VM to abort immediately.
                     trace!("Signal MmapOutOfMemory!");
                     VM::VMCollection::out_of_memory(tls, AllocationError::MmapOutOfMemory);
@@ -221,7 +229,7 @@ pub fn handle_mmap_error<VM: VMBinding>(error: Error, tls: VMThread) -> ! {
             }
         }
         ErrorKind::AlreadyExists => {
-            println!("{}", get_process_memory_maps());
+            eprintln!("{}", get_process_memory_maps());
             panic!("Failed to mmap, the address is already mapped. Should MMTk quarantine the address range first?");
         }
         _ => {}
@@ -290,8 +298,6 @@ fn wrap_libc_call<T: PartialEq>(f: &dyn Fn() -> T, expect: T) -> Result<()> {
 
 /// Get the memory maps for the process. The returned string is a multi-line string.
 /// This is only meant to be used for debugging. For example, log process memory maps after detecting a clash.
-/// If we would need to parsable memory maps, I would suggest using a library instead which saves us the trouble to deal with portability.
-// #[cfg(debug_assertions)]
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn get_process_memory_maps() -> String {
     // print map
@@ -328,6 +334,13 @@ pub fn get_proc_self_status(data: &mut String) {
     f.read_to_string(data).unwrap();
 }
 
+/// Get the memory maps for the process. The returned string is a multi-line string.
+/// This is only meant to be used for debugging. For example, log process memory maps after detecting a clash.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+pub fn get_process_memory_maps() -> String {
+    "(process map unavailable)".to_string()
+}
+
 /// Returns the total physical memory for the system in bytes.
 pub(crate) fn get_system_total_memory() -> u64 {
     // TODO: Note that if we want to get system info somewhere else in the future, we should
@@ -341,7 +354,9 @@ pub(crate) fn get_system_total_memory() -> u64 {
     // start-up time.  During start-up, MMTk core only needs the total memory to initialize the
     // `Options`.  If we only load memory-related components on start-up, it should only take <1ms
     // to initialize the `System` instance.
-    let sys = System::new_with_specifics(RefreshKind::new().with_memory());
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_memory(MemoryRefreshKind::new().with_ram()),
+    );
     sys.total_memory()
 }
 

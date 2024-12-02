@@ -106,31 +106,28 @@ impl<VM: VMBinding> Plan for Immix<VM> {
     fn release(&mut self, tls: VMWorkerThread) {
         self.common.release(tls, true);
         // release the collected region
+        if likely(!self.common().is_zygote()) {
+            self.immix_space.release(true);
+        }
+    }
+
+    fn end_of_gc(&mut self, _tls: VMWorkerThread) {
         if unlikely(self.common().is_zygote()) {
             let zygotespace = self.common().get_zygote().get_immix_space();
             self.last_gc_was_defrag
-                .store(zygotespace.in_defrag(), Ordering::Relaxed);
+                .store(zygotespace.end_of_gc(), Ordering::Relaxed);
         } else {
             self.last_gc_was_defrag
-                .store(self.immix_space.release(true), Ordering::Relaxed);
+                .store(self.immix_space.end_of_gc(), Ordering::Relaxed);
         };
     }
 
-    fn prepare_worker(&self, worker: &mut GCWorker<Self::VM>) {
+    fn current_gc_may_move_object(&self) -> bool {
         if unlikely(self.common().is_zygote()) {
-            // We are the Zygote process and we have not created the ZygoteSpace yet so use the
-            // ImmixSpace inside the ZygoteSpace
-            unsafe {
-                worker.get_copy_context_mut().immix[0].assume_init_mut()
-            }.rebind(self.common().get_zygote().get_immix_space());
+            let zygotespace = self.common().get_zygote().get_immix_space();
+            zygotespace.in_defrag()
         } else {
-            // Either the runtime has a Zygote space or it is a command-line runtime
-            debug_assert!(
-                self.common().has_zygote_space()
-                    || (!self.common().is_zygote_process()
-                        && !*self.common().base.options.is_zygote_process)
-            );
-            unsafe { worker.get_copy_context_mut().immix[0].assume_init_mut() }.rebind(&self.immix_space);
+            self.immix_space.in_defrag()
         }
     }
 
