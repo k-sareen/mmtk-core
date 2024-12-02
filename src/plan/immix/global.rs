@@ -17,7 +17,7 @@ use crate::util::heap::chunk_map::IMMIX_CHUNK_MASK;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::metadata::side_metadata::SideMetadataContext;
-use crate::util::rust_util::unlikely;
+use crate::util::rust_util::{likely, unlikely};
 use crate::vm::VMBinding;
 use crate::{policy::immix::ImmixSpace, util::opaque_pointer::VMWorkerThread};
 use std::sync::atomic::AtomicBool;

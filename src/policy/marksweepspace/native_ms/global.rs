@@ -344,42 +344,6 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         true
     }
 
-    pub fn is_marked(&self, object: ObjectReference) -> bool {
-        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst)
-    }
-
-    fn is_object_in_nursery(&self, object: ObjectReference) -> bool {
-        self.in_space(object) && !self.is_marked(object)
-    }
-
-    fn test_and_mark(&self, object: ObjectReference) -> bool {
-        loop {
-            let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
-                object,
-                None,
-                Ordering::SeqCst,
-            );
-            if old_value == 1 {
-                return false;
-            }
-
-            if VM::VMObjectModel::LOCAL_MARK_BIT_SPEC
-                .compare_exchange_metadata::<VM, u8>(
-                    object,
-                    old_value,
-                    1,
-                    None,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_ok()
-            {
-                break;
-            }
-        }
-        true
-    }
-
     fn trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,

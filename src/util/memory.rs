@@ -5,8 +5,7 @@ use crate::vm::{Collection, VMBinding};
 use bytemuck::NoUninit;
 use libc::{PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE};
 use std::io::{Error, Result};
-use sysinfo::MemoryRefreshKind;
-use sysinfo::{RefreshKind, System};
+use sysinfo::{RefreshKind, System, SystemExt};
 
 #[allow(unused)]
 const PROT_RW:  libc::c_int = PROT_READ | PROT_WRITE;
@@ -354,9 +353,7 @@ pub(crate) fn get_system_total_memory() -> u64 {
     // start-up time.  During start-up, MMTk core only needs the total memory to initialize the
     // `Options`.  If we only load memory-related components on start-up, it should only take <1ms
     // to initialize the `System` instance.
-    let sys = System::new_with_specifics(
-        RefreshKind::new().with_memory(MemoryRefreshKind::new().with_ram()),
-    );
+    let sys = System::new_with_specifics(RefreshKind::new().with_memory());
     sys.total_memory()
 }
 
