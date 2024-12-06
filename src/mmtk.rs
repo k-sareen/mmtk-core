@@ -141,11 +141,13 @@ impl<VM: VMBinding> MMTK<VM> {
         SFT_MAP.initialize_once(&create_sft_map);
 
         let is_zygote_process = *options.is_zygote_process;
-        // XXX(kunals): Only have four GC threads at max on the device
+        // XXX(kunals): Only have two GC threads at max on the device
         let num_workers = if cfg!(feature = "single_worker") {
             1
+        } else if is_zygote_process {
+            std::cmp::min(*options.threads, 2)
         } else {
-            std::cmp::min(*options.threads, 4)
+            *options.threads
         };
 
         let scheduler = GCWorkScheduler::new(num_workers, (*options.thread_affinity).clone());
