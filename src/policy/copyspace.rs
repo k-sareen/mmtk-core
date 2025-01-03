@@ -74,15 +74,15 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
         }
     }
 
-    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Address {
         if !self.is_from_space() {
-            return None;
+            return Address::ZERO;
         }
 
         if object_forwarding::is_forwarded::<VM>(object) {
             object_forwarding::read_potential_forwarding_pointer::<VM>(object)
         } else {
-            None
+            Address::ZERO
         }
     }
 

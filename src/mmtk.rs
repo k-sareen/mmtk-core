@@ -15,6 +15,7 @@ use crate::util::heap::gc_trigger::GCTrigger;
 use crate::util::heap::layout::vm_layout::VMLayout;
 use crate::util::heap::layout::{self, Mmapper, VMMap};
 use crate::util::heap::HeapMeta;
+use crate::util::memory::MmapStrategy;
 use crate::util::opaque_pointer::*;
 use crate::util::options::{Options, PlanSelector};
 use crate::util::reference_processor::ReferenceProcessors;
@@ -217,14 +218,19 @@ impl<VM: VMBinding> MMTK<VM> {
         use crate::util::constants::LOG_BYTES_IN_PAGE;
         use crate::util::heap::layout::vm_layout::vm_layout;
         let heap_pages = (vm_layout().heap_end - vm_layout().heap_start) >> LOG_BYTES_IN_PAGE;
-        MMAPPER.quarantine_address_range(vm_layout().heap_start, heap_pages);
+        let quarantine_strategy = MmapStrategy::new(false, crate::util::memory::MmapProtection::NoAccess);
+        MMAPPER.quarantine_address_range(vm_layout().heap_start, heap_pages, quarantine_strategy);
 
         // XXX(kunals): If we are using NoGC then mmap and zero the entire space. This means that
         // each page in the heap has been touched at least once and hence the mutator should not
         // get page faults when allocating. This can drastically improve the performance of the
         // mutator
         if *options.plan == PlanSelector::NoGC {
-            MMAPPER.ensure_mapped(vm_layout().heap_start, heap_pages);
+            let nogc_strategy = MmapStrategy::new(
+                *options.transparent_hugepages,
+                crate::util::memory::MmapProtection::ReadWrite,
+            );
+            MMAPPER.ensure_mapped(vm_layout().heap_start, heap_pages, nogc_strategy);
             crate::util::memory::zero(vm_layout().heap_start, heap_pages << LOG_BYTES_IN_PAGE);
         }
 

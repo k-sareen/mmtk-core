@@ -32,8 +32,8 @@ pub trait SFT {
     }
 
     /// Get potential forwarding pointer if the object is forwarded.
-    fn get_potential_forwarded_object(&self, _object: ObjectReference) -> Option<ObjectReference> {
-        None
+    fn get_potential_forwarded_object(&self, _object: ObjectReference) -> Address {
+        Address::ZERO
     }
 
     /// Is the object live, determined by the policy?

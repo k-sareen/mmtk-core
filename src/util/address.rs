@@ -609,7 +609,7 @@ impl ObjectReference {
     }
 
     /// Get potential forwarding pointer if the object is forwarded.
-    pub fn get_potential_forwarded_object<VM: VMBinding>(self) -> Option<Self> {
+    pub fn get_potential_forwarded_object<VM: VMBinding>(self) -> Address {
         unsafe { SFT_MAP.get_unchecked(self.to_address::<VM>()) }.get_potential_forwarded_object(self)
     }
 

@@ -62,7 +62,7 @@ impl<VM: VMBinding> Plan for MarkSweep<VM> {
         self.common.release(tls, true);
     }
 
-    fn end_of_gc(&mut self, _tls: VMWorkerThread) {
+    fn end_of_gc(&self, _tls: VMWorkerThread) {
         self.ms.end_of_gc();
     }
 

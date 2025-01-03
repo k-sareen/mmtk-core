@@ -14,7 +14,7 @@ pub const fn min_of_usize(a: usize, b: usize) -> usize {
     }
 }
 
-#[rustversion::nightly]
+#[cfg(feature = "nightly")]
 pub use core::intrinsics::{likely, unlikely};
 
 // likely() and unlikely() compiler hints in stable Rust

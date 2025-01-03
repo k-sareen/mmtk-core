@@ -56,7 +56,7 @@ impl<VM: VMBinding> SFT for ZygoteSpace<VM> {
         self.immix_space.get_forwarded_object(object)
     }
 
-    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Address {
         self.immix_space.get_potential_forwarded_object(object)
     }
 
@@ -149,6 +149,10 @@ impl<VM: VMBinding> Space<VM> for ZygoteSpace<VM> {
 
     fn set_copy_for_sft_trace(&mut self, _semantics: Option<CopySemantics>) {
         panic!("We do not use SFT to trace objects for Immix-like spaces. set_copy_context() cannot be used.")
+    }
+
+    fn enumerate_objects(&self, enumerator: &mut dyn crate::util::object_enum::ObjectEnumerator) {
+        self.immix_space.enumerate_objects(enumerator)
     }
 
     fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
@@ -332,6 +336,12 @@ impl<VM: VMBinding> Space<VM> for Option<ZygoteSpace<VM>> {
             vec![]
         }
     }
+
+    fn enumerate_objects(&self, enumerator: &mut dyn crate::util::object_enum::ObjectEnumerator) {
+        if let Some(space) = self.as_ref() {
+            space.enumerate_objects(enumerator)
+        }
+    }
 }
 
 impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
@@ -343,7 +353,7 @@ impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
         self.as_ref().unwrap().get_forwarded_object(object)
     }
 
-    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Address {
         self.as_ref().unwrap().get_potential_forwarded_object(object)
     }
 

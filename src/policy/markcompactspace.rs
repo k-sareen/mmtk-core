@@ -41,8 +41,8 @@ impl<VM: VMBinding> SFT for MarkCompactSpace<VM> {
         Self::get_header_forwarding_pointer(object)
     }
 
-    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
-        self.get_forwarded_object(object)
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Address {
+        unsafe { std::mem::transmute(self.get_forwarded_object(object)) }
     }
 
     fn is_live(&self, object: ObjectReference) -> bool {

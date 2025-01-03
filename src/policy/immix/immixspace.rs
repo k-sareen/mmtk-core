@@ -105,16 +105,16 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         }
     }
 
-    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
+    fn get_potential_forwarded_object(&self, object: ObjectReference) -> Address {
         // If we never move objects, look no further.
         if super::NEVER_MOVE_OBJECTS {
-            return None;
+            return Address::ZERO;
         }
 
         if object_forwarding::is_forwarded::<VM>(object) {
             object_forwarding::read_potential_forwarding_pointer::<VM>(object)
         } else {
-            None
+            Address::ZERO
         }
     }
 

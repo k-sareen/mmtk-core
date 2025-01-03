@@ -483,7 +483,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         self.scheduler.work_buckets[crate::scheduler::WorkBucketStage::Release].add(work_packet);
     }
 
-    pub fn end_of_gc(&mut self) {
+    pub fn end_of_gc(&self) {
         epilogue::debug_assert_counter_zero(
             &self.pending_release_packets,
             "pending_release_packets",

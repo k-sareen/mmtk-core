@@ -610,6 +610,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
             Some(ZygoteSpace::new(args.get_space_args(
                 "zygote",
                 true,
+                false,
                 VMRequest::discontiguous(),
             )))
         } else {
