@@ -60,11 +60,17 @@ impl<C: GCWorkContext> GCWork<C::VM> for Prepare<C> {
         plan_mut.prepare(worker.tls);
 
         if plan_mut.constraints().needs_prepare_mutator {
-            for mutator in <C::VM as VMBinding>::VMActivePlan::mutators() {
-                mmtk.scheduler.work_buckets[WorkBucketStage::Prepare]
-                    .add(PrepareMutator::<C::VM>::new(mutator));
-            }
+            let prepare_mutator_packets = <C::VM as VMBinding>::VMActivePlan::mutators()
+                .map(|mutator| Box::new(PrepareMutator::<C::VM>::new(mutator)) as _)
+                .collect::<Vec<_>>();
+            // Just in case the VM binding is inconsistent about the number of mutators and the actual mutator list.
+            debug_assert_eq!(
+                prepare_mutator_packets.len(),
+                <C::VM as VMBinding>::VMActivePlan::number_of_mutators()
+            );
+            mmtk.scheduler.work_buckets[WorkBucketStage::Prepare].bulk_add(prepare_mutator_packets);
         }
+
         for w in &mmtk.scheduler.worker_group.workers_shared {
             let result = w.designated_work.push(Box::new(PrepareCollector));
             debug_assert!(result.is_ok());
@@ -133,10 +139,16 @@ impl<C: GCWorkContext + 'static> GCWork<C::VM> for Release<C> {
         let plan_mut: &mut C::PlanType = unsafe { &mut *(self.plan as *const _ as *mut _) };
         plan_mut.release(worker.tls);
 
-        for mutator in <C::VM as VMBinding>::VMActivePlan::mutators() {
-            mmtk.scheduler.work_buckets[WorkBucketStage::Release]
-                .add(ReleaseMutator::<C::VM>::new(mutator));
-        }
+        let release_mutator_packets = <C::VM as VMBinding>::VMActivePlan::mutators()
+            .map(|mutator| Box::new(ReleaseMutator::<C::VM>::new(mutator)) as _)
+            .collect::<Vec<_>>();
+        // Just in case the VM binding is inconsistent about the number of mutators and the actual mutator list.
+        debug_assert_eq!(
+            release_mutator_packets.len(),
+            <C::VM as VMBinding>::VMActivePlan::number_of_mutators()
+        );
+        mmtk.scheduler.work_buckets[WorkBucketStage::Release].bulk_add(release_mutator_packets);
+
         for w in &mmtk.scheduler.worker_group.workers_shared {
             let result = w.designated_work.push(Box::new(ReleaseCollector));
             debug_assert!(result.is_ok());
@@ -727,10 +739,28 @@ impl<VM: VMBinding, DPE: ProcessEdgesWork<VM = VM>, PPE: ProcessEdgesWork<VM = V
     }
 }
 
+/// For USDT tracepoints for roots.
+/// Keep in sync with `tools/tracing/timeline/visualize.py`.
+#[repr(usize)]
+enum RootsKind {
+    NORMAL = 0,
+    PINNING = 1,
+    TPINNING = 2,
+}
+
 impl<VM: VMBinding, DPE: ProcessEdgesWork<VM = VM>, PPE: ProcessEdgesWork<VM = VM>>
     RootsWorkFactory<VM::VMSlot> for ProcessEdgesWorkRootsWorkFactory<VM, DPE, PPE>
 {
     fn create_process_roots_work(&mut self, slots: Vec<VM::VMSlot>) {
+        // Note: We should use the same USDT name "mmtk:roots" for all the three kinds of roots. A
+        // VM binding may not call all of the three methods in this impl. For example, the OpenJDK
+        // binding only calls `create_process_roots_work`, and the Ruby binding only calls
+        // `create_process_pinning_roots_work`. Because `ProcessEdgesWorkRootsWorkFactory<VM, DPE,
+        // PPE>` is a generic type, the Rust compiler emits the function bodies on demand, so the
+        // resulting machine code may not contain all three USDT trace points.  If they have
+        // different names, and our `capture.bt` mentions all of them, `bpftrace` may complain that
+        // it cannot find one or more of those USDT trace points in the binary.
+        probe!(mmtk, roots, RootsKind::NORMAL, slots.len());
         crate::memory_manager::add_work_packet(
             self.mmtk,
             WorkBucketStage::Closure,
@@ -739,6 +769,7 @@ impl<VM: VMBinding, DPE: ProcessEdgesWork<VM = VM>, PPE: ProcessEdgesWork<VM = V
     }
 
     fn create_process_pinning_roots_work(&mut self, nodes: Vec<ObjectReference>) {
+        probe!(mmtk, roots, RootsKind::PINNING, nodes.len());
         // Will process roots within the PinningRootsTrace bucket
         // And put work in the Closure bucket
         crate::memory_manager::add_work_packet(
@@ -749,6 +780,7 @@ impl<VM: VMBinding, DPE: ProcessEdgesWork<VM = VM>, PPE: ProcessEdgesWork<VM = V
     }
 
     fn create_process_tpinning_roots_work(&mut self, nodes: Vec<ObjectReference>) {
+        probe!(mmtk, roots, RootsKind::TPINNING, nodes.len());
         crate::memory_manager::add_work_packet(
             self.mmtk,
             WorkBucketStage::TPinningClosure,
@@ -837,6 +869,10 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
                 }
             }
         }
+
+        let total_objects = objects_to_scan.len();
+        let scan_and_trace = scan_later.len();
+        probe!(mmtk, scan_objects, total_objects, scan_and_trace);
 
         // If any object does not support slot-enqueuing, we process them now.
         if !scan_later.is_empty() {

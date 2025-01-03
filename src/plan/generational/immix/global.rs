@@ -108,10 +108,13 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
     #[allow(clippy::branches_sharing_code)]
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<Self::VM>) {
         let is_full_heap = self.requires_full_heap_collection();
+        probe!(mmtk, gen_full_heap, is_full_heap);
+
         if !is_full_heap {
-            debug!("Nursery GC");
+            info!("Nursery GC");
             scheduler.schedule_common_work::<GenImmixNurseryGCWorkContext<VM>>(self);
         } else {
+            info!("Full heap GC");
             let immix_space = if unlikely(self.common().is_zygote()) {
                 self.common().get_zygote().get_immix_space()
             } else {
@@ -260,7 +263,7 @@ impl<VM: VMBinding> GenImmix<VM> {
         plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
 
         let immix_space = ImmixSpace::new(
-            plan_args.get_space_args("immix_mature", true, VMRequest::discontiguous()),
+            plan_args.get_space_args("immix_mature", true, false, VMRequest::discontiguous()),
             ImmixSpaceArgs {
                 reset_log_bit_in_major_gc: false,
                 // We don't need to unlog objects at tracing. Instead, we unlog objects at copying.

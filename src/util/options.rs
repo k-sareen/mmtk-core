@@ -29,7 +29,7 @@ pub enum NurseryZeroingOptions {
 
 /// Select a GC plan for MMTk.
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, EnumString, Debug)]
+#[derive(Copy, Clone, EnumString, Debug, PartialEq, Eq)]
 pub enum PlanSelector {
     /// Allocation only without a collector. This is usually used for debugging.
     /// Similar to OpenJDK epsilon (<https://openjdk.org/jeps/318>).
@@ -215,7 +215,7 @@ macro_rules! options {
             ///
             /// Arguments:
             /// * `options`: a string that is key value pairs separated by white spaces or commas, e.g. `threads=1 stress_factor=4096`,
-            /// or `threads=1,stress_factor=4096`
+            ///   or `threads=1,stress_factor=4096`
             pub fn set_bulk_from_command_line(&mut self, options: &str) -> bool {
                 for opt in options.replace(",", " ").split_ascii_whitespace() {
                     let kv_pair: Vec<&str> = opt.split('=').collect();
@@ -857,7 +857,8 @@ options! {
     /// ANDROID-CHANGED: Changed to a default of 256 MB from 0.5x total physical memory because Android
     ///                  does not allow reading /proc files when running with SELinux turned on
     gc_trigger:             GCTriggerSelector    [env_var: true, command_line: true] [|v: &GCTriggerSelector| v.validate()] = GCTriggerSelector::FixedHeapSize(256 * 1024 * 1024),
-    /// Enable transparent hugepage support via madvise (only Linux is supported)
+    /// Enable transparent hugepage support for MMTk spaces via madvise (only Linux is supported)
+    /// This only affects the memory for MMTk spaces.
     transparent_hugepages: bool                  [env_var: true, command_line: true]  [|v: &bool| !v || cfg!(target_os = "linux")] = false,
     /// Is the current runtime the Zygote process? Note that this value is only used once at the start
     /// when creating the [`MMTK`] instance and is not maintained. The correct up-to-date value is

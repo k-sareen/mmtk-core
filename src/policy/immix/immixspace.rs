@@ -9,7 +9,6 @@ use crate::policy::sft_map::SFTMap;
 use crate::policy::space::{CommonSpace, Space};
 use crate::util::alloc::allocator::AllocatorContext;
 use crate::util::constants::LOG_BYTES_IN_PAGE;
-use crate::util::copy::*;
 use crate::util::heap::chunk_map::*;
 use crate::util::heap::BlockPageResource;
 use crate::util::heap::PageResource;
@@ -19,7 +18,9 @@ use crate::util::metadata::mark_bit::MarkState;
 #[cfg(feature = "vo_bit")]
 use crate::util::metadata::vo_bit;
 use crate::util::metadata::{self, MetadataSpec};
+use crate::util::object_enum::ObjectEnumerator;
 use crate::util::object_forwarding;
+use crate::util::{copy::*, epilogue, object_enum};
 use crate::util::rust_util::unlikely;
 use crate::util::{Address, ObjectReference};
 use crate::vm::*;
@@ -158,8 +159,18 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         crate::util::metadata::vo_bit::set_vo_bit::<VM>(object);
     }
     #[cfg(feature = "is_mmtk_object")]
-    fn is_mmtk_object(&self, addr: Address) -> bool {
-        crate::util::metadata::vo_bit::is_vo_bit_set_for_addr::<VM>(addr).is_some()
+    fn is_mmtk_object(&self, addr: Address) -> Option<ObjectReference> {
+        crate::util::metadata::vo_bit::is_vo_bit_set_for_addr::<VM>(addr)
+    }
+    #[cfg(feature = "is_mmtk_object")]
+    fn find_object_from_internal_pointer(
+        &self,
+        ptr: Address,
+        max_search_bytes: usize,
+    ) -> Option<ObjectReference> {
+        // We don't need to search more than the max object size in the immix space.
+        let search_bytes = usize::min(super::MAX_IMMIX_OBJECT_SIZE, max_search_bytes);
+        crate::util::metadata::vo_bit::find_object_from_internal_pointer::<VM>(ptr, search_bytes)
     }
     fn sft_trace_object(
         &self,
@@ -196,6 +207,11 @@ impl<VM: VMBinding> Space<VM> for ImmixSpace<VM> {
     fn set_copy_for_sft_trace(&mut self, _semantics: Option<CopySemantics>) {
         panic!("We do not use SFT to trace objects for Immix. set_copy_context() cannot be used.")
     }
+
+    fn enumerate_objects(&self, enumerator: &mut dyn ObjectEnumerator) {
+        object_enum::enumerate_blocks_from_chunk_map::<Block>(enumerator, &self.chunk_map);
+    }
+
     fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
         let mut blocks = vec![];
         let chunk_map = &self.chunk_map;
@@ -661,6 +677,10 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 #[cfg(feature = "vo_bit")]
                 vo_bit::helper::on_object_marked::<VM>(object);
 
+                if !super::MARK_LINE_AT_SCAN_TIME {
+                    self.mark_lines(object);
+                }
+
                 object
             } else {
                 // We are forwarding objects. When the copy allocator allocates the block, it should
@@ -944,6 +964,12 @@ impl<VM: VMBinding> FlushPageResource<VM> {
             // Now flush the BlockPageResource.
             self.space.flush_page_resource()
         }
+    }
+}
+
+impl<VM: VMBinding> Drop for FlushPageResource<VM> {
+    fn drop(&mut self) {
+        epilogue::debug_assert_counter_zero(&self.counter, "FlushPageResource::counter");
     }
 }
 

@@ -216,11 +216,11 @@ impl<VM: VMBinding> GenCopy<VM> {
         plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
 
         let copyspace0 = CopySpace::new(
-            plan_args.get_space_args("copyspace0", true, VMRequest::discontiguous()),
+            plan_args.get_space_args("copyspace0", true, false, VMRequest::discontiguous()),
             false,
         );
         let copyspace1 = CopySpace::new(
-            plan_args.get_space_args("copyspace1", true, VMRequest::discontiguous()),
+            plan_args.get_space_args("copyspace1", true, false, VMRequest::discontiguous()),
             true,
         );
 

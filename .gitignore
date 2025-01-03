@@ -31,6 +31,9 @@ Cargo.lock
 # Generated for testing tutorial code build
 /src/plan/mygc
 
+# Python script cache
+__pycache__
+
 target.tmp
 out/
 *.old

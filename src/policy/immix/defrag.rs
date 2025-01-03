@@ -111,6 +111,7 @@ impl Defrag {
                 || is_zygote
                 || (collect_whole_heap && user_triggered && full_heap_system_gc));
         info!("Defrag: {}", in_defrag);
+        probe!(mmtk, immix_defrag, in_defrag);
         self.in_defrag_collection
             .store(in_defrag, Ordering::Release)
     }

@@ -33,7 +33,6 @@ extern crate strum_macros;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate atomic;
 extern crate atomic_traits;
 extern crate crossbeam_deque;
 extern crate crossbeam_queue;
