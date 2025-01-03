@@ -28,7 +28,7 @@ rust_library {
         "default",
         "vm_space",
         "perf_counter",
-        // "eager_sweeping",    // TODO(kunals): Need to merge to v0.26 to get latest mark-sweep fixes
+        "eager_sweeping",
         "object_pinning",
         "set_unlog_bits_vm_space",
         // "sanity",             // debug only
