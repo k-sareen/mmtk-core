@@ -175,12 +175,14 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
             ImmixSpaceArgs {
                 unlog_object_when_traced: true,
                 reset_log_bit_in_major_gc: true,
+                #[cfg(feature = "vo_bit")]
                 mixed_age: false,
             }
         } else {
             ImmixSpaceArgs {
                 unlog_object_when_traced: false,
                 reset_log_bit_in_major_gc: false,
+                #[cfg(feature = "vo_bit")]
                 mixed_age: false,
             }
         };
