@@ -160,9 +160,8 @@ impl Defrag {
         let mut available_clean_pages_for_defrag = plan_stats.total_pages as isize
             - (plan_stats.reserved_pages as isize
                 - self.defrag_headroom_pages(space) as isize);
-        if available_clean_pages_for_defrag < 0 {
-            available_clean_pages_for_defrag = 0
-        };
+
+        available_clean_pages_for_defrag = std::cmp::max(available_clean_pages_for_defrag, self.defrag_headroom_pages(space) as isize);
 
         self.available_clean_pages_for_defrag
             .store(available_clean_pages_for_defrag as usize, Ordering::Release);
@@ -170,11 +169,6 @@ impl Defrag {
         if self.in_defrag() {
             self.establish_defrag_spill_threshold(space)
         }
-
-        self.available_clean_pages_for_defrag.store(
-            available_clean_pages_for_defrag as usize + plan_stats.collection_reserved_pages,
-            Ordering::Release,
-        );
     }
 
     /// Get the numebr of all the recyclable lines in all the reusable blocks.
