@@ -516,6 +516,14 @@ impl<VM: VMBinding> MMTK<VM> {
         self.state.set_is_pre_first_zygote_fork_gc(is_pre_first_zygote_fork_gc)
     }
 
+    pub fn is_jank_perceptible(&self) -> bool {
+        self.state.is_jank_perceptible()
+    }
+
+    pub fn set_is_jank_perceptible(&self, is_jank_perceptible: bool) {
+        self.state.set_is_jank_perceptible(is_jank_perceptible)
+    }
+
     /// Clamp the max heap size for target application. Return if the max heap size was clamped
     pub fn clamp_max_heap_size(&mut self, max: usize) -> bool {
         // XXX(kunals): This is incredibly unsafe as we cast the arc into a mutable reference during
@@ -526,6 +534,21 @@ impl<VM: VMBinding> MMTK<VM> {
                 unsafe { &mut *(Arc::as_ptr(&self.gc_trigger) as *mut _) };
             gc_trigger.clamp_max_heap_size(max)
         }
+    }
+
+    /// Inform the triggering policy that the heap size should grow for an event.
+    pub fn grow_heap_size_for_event(&'static self) {
+        self.gc_trigger.policy.grow_heap_size_for_event(self)
+    }
+
+    /// Clamp the capacity to the growth limit
+    pub fn clamp_growth_limit(&self) {
+        self.gc_trigger.policy.clamp_growth_limit()
+    }
+
+    /// Clear the growth limit to the capacity
+    pub fn clear_growth_limit(&self) {
+        self.gc_trigger.policy.clear_growth_limit()
     }
 
     /// The application code has requested a collection. This is just a GC hint, and

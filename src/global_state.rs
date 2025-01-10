@@ -48,6 +48,8 @@ pub struct GlobalState {
     pub(crate) has_zygote_space: AtomicBool,
     /// Is the current GC the pre-first Zygote fork GC?
     pub(crate) is_pre_first_zygote_fork_gc: AtomicBool,
+    /// Is the current process running in a jank perceptible mode?
+    pub(crate) is_jank_perceptible: AtomicBool,
     /// A counteer that keeps tracks of the number of bytes allocated by malloc
     #[cfg(feature = "malloc_counted_size")]
     pub(crate) malloc_bytes: AtomicUsize,
@@ -199,6 +201,14 @@ impl GlobalState {
         self.is_pre_first_zygote_fork_gc.store(is_pre_first_zygote_fork_gc, Ordering::Relaxed)
     }
 
+    pub fn is_jank_perceptible(&self) -> bool {
+        self.is_jank_perceptible.load(Ordering::Relaxed)
+    }
+
+    pub fn set_is_jank_perceptible(&self, is_jank_perceptible: bool) {
+        self.is_jank_perceptible.store(is_jank_perceptible, Ordering::Relaxed)
+    }
+
     #[cfg(feature = "malloc_counted_size")]
     pub fn get_malloc_bytes_in_pages(&self) -> usize {
         crate::util::conversions::bytes_to_pages_up(self.malloc_bytes.load(Ordering::Relaxed))
@@ -244,6 +254,7 @@ impl Default for GlobalState {
             is_zygote_process: AtomicBool::new(false),
             has_zygote_space: AtomicBool::new(false),
             is_pre_first_zygote_fork_gc: AtomicBool::new(false),
+            is_jank_perceptible: AtomicBool::new(true),
             #[cfg(feature = "malloc_counted_size")]
             malloc_bytes: AtomicUsize::new(0),
             #[cfg(feature = "count_live_bytes_in_gc")]

@@ -232,6 +232,12 @@ pub trait GCTriggerPolicy<VM: VMBinding>: Sync + Send {
     fn can_heap_size_grow(&self) -> bool;
     /// Clamp max heap size to provided value. Return if max heap size was clamped
     fn clamp_max_heap_size(&mut self, max: usize) -> bool;
+    /// Inform the triggering policy that the heap size should grow for an event.
+    fn grow_heap_size_for_event(&self, _mmtk: &'static MMTK<VM>) {}
+    /// Clamp the capacity to the growth limit
+    fn clamp_growth_limit(&self) {}
+    /// Clear the growth limit to the capacity
+    fn clear_growth_limit(&self) {}
 }
 
 /// A simple GC trigger that uses a fixed heap size.
