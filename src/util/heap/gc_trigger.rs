@@ -164,8 +164,14 @@ impl<VM: VMBinding> GCTrigger<VM> {
         crate::util::conversions::bytes_to_pages_up(self.get_min_nursery_bytes())
     }
 
+    /// Clamp the max heap size to the provided value. Return if max heap size was clamped
     pub fn clamp_max_heap_size(&mut self, max: usize) -> bool {
         self.policy.clamp_max_heap_size(max)
+    }
+
+    /// Return the current number of reserved pages
+    pub fn get_reserved_pages(&self) -> usize {
+        self.plan().get_reserved_pages()
     }
 }
 

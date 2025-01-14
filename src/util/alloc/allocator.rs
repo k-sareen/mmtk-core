@@ -130,6 +130,11 @@ pub fn get_maximum_aligned_size_inner<VM: VMBinding>(
     }
 }
 
+/// ATrace heap size in KB. Expects heap size to be provided in pages.
+fn atrace_heap_size(heap_size: usize) {
+    atrace::atrace_int(atrace::AtraceTag::Dalvik, "Heap size (KB)", (heap_size << 2) as i32);
+}
+
 /// The context an allocator needs to access in order to perform allocation.
 pub struct AllocatorContext<VM: VMBinding> {
     pub state: Arc<GlobalState>,
@@ -381,6 +386,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
         #[allow(clippy::let_and_return)]
         let ret = self.alloc_slow_once(size, align, offset);
         probe!(mmtk, alloc_slow_once_end);
+        atrace_heap_size(self.get_context().gc_trigger.get_reserved_pages());
         ret
     }
 
