@@ -48,6 +48,8 @@ pub struct Stats {
     pub shared: Arc<SharedStats>,
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
     exceeded_phase_limit: AtomicBool,
+    pub power_stats: Arc<Mutex<PowerStats>>,
+    pub prev_power_stats: Arc<Mutex<Vec<PowerStatsEnergyMeasurement>>>,
 }
 
 impl Stats {
@@ -73,6 +75,8 @@ impl Stats {
             shared,
             counters: Mutex::new(counters),
             exceeded_phase_limit: AtomicBool::new(false),
+            power_stats: Arc::new(Mutex::new(PowerStats::new())),
+            prev_power_stats: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -136,12 +140,14 @@ impl Stats {
                     self.shared.clone(),
                     true,
                     false,
-                    pe
+                    pe,
                 ))));
             } else {
                 warn!("Error opening event {}", e.1);
             }
         }
+        let mut power_stats = self.power_stats.lock().unwrap();
+        power_stats.init(vec!["s2mpg12-odpm", "s2mpg13-odpm"].as_slice());
     }
 
     pub fn start_gc(&self) {
@@ -180,12 +186,15 @@ impl Stats {
     pub fn print_stats<VM: VMBinding>(&self, mmtk: &'static MMTK<VM>) {
         let mut output_string = String::new();
         output_string.push_str(
-            "============================ MMTk Statistics Totals ============================\n"
+            "============================ MMTk Statistics Totals ============================\n",
         );
         let scheduler_stat = mmtk.scheduler.statistics();
         self.print_column_names(&scheduler_stat, &mut output_string);
         output_string.push_str(format!("{}\t", self.get_phase() / 2).as_str());
-        self.total_time.lock().unwrap().print_total(None, &mut output_string);
+        self.total_time
+            .lock()
+            .unwrap()
+            .print_total(None, &mut output_string);
         output_string.push('\t');
         let counter = self.counters.lock().unwrap();
         for iter in &(*counter) {
@@ -202,7 +211,9 @@ impl Stats {
         for value in scheduler_stat.values() {
             output_string.push_str(format!("{}\t", value).as_str());
         }
-        output_string.push_str("\n------------------------------ End MMTk Statistics -----------------------------\n");
+        output_string.push_str(
+            "\n------------------------------ End MMTk Statistics -----------------------------\n",
+        );
         warn!("{}", output_string);
     }
 
@@ -240,11 +251,38 @@ impl Stats {
                 ctr.start();
             }
         }
+        let mut power_stats = self.power_stats.lock().unwrap();
+        let mut prev_power_stats = self.prev_power_stats.lock().unwrap();
+        let readings = power_stats.read_energy_meter(vec![].as_slice());
+        *prev_power_stats = readings;
     }
 
     pub fn stop_all<VM: VMBinding>(&self, mmtk: &'static MMTK<VM>) {
         self.stop_all_counters();
+        let mut power_stats = self.power_stats.lock().unwrap();
+        let prev_power_stats = self.prev_power_stats.lock().unwrap();
+        let channel_infos = power_stats.get_energy_meter_info().clone();
+        let readings = power_stats.read_energy_meter(vec![].as_slice());
         self.print_stats(mmtk);
+        let mut total_energy = 0;
+        let mut total_power = 0;
+        for energy_stat in readings {
+            let channel_info = &channel_infos[energy_stat.id as usize];
+            let prev_energy_stat = &prev_power_stats[energy_stat.id as usize];
+            let energy = energy_stat.energy_uW_s - prev_energy_stat.energy_uW_s;
+            let duration = energy_stat.duration_ms - prev_energy_stat.duration_ms;
+            let power = energy / (duration / 1000);
+            total_energy += energy;
+            total_power += power;
+            warn!(
+                "kunals: Energy consumption for {} (subsystem: {}) is {} uWs, power is {} uW",
+                channel_info.name, channel_info.subsystem, energy, power,
+            );
+        }
+        warn!(
+            "kunals: Total energy consumption is {} uWs, total power is {} uW",
+            total_energy, total_power
+        );
     }
 
     fn stop_all_counters(&self) {

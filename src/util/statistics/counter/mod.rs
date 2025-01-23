@@ -4,12 +4,14 @@ mod event_counter;
 mod long_counter;
 #[cfg(feature = "perf_counter")]
 mod perf_event;
+mod power_stats;
 mod size_counter;
 
 pub use self::event_counter::EventCounter;
 pub use self::long_counter::{LongCounter, Timer};
 #[cfg(feature = "perf_counter")]
 pub use self::perf_event::PerfEventDiffable;
+pub use self::power_stats::*;
 pub use self::size_counter::SizeCounter;
 
 /// An abstraction over how a specific Diffable value is counted
