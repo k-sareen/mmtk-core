@@ -119,7 +119,9 @@ pub struct PRAllocResult {
     pub new_chunk: bool,
 }
 
-pub struct PRAllocFail;
+pub struct PRAllocFail {
+    pub msg: String,
+}
 
 pub struct CommonPageResource {
     pub accounting: PageAccounting,

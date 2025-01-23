@@ -107,7 +107,7 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
         }
 
         if page_offset == freelist::FAILURE {
-            return Result::Err(PRAllocFail);
+            return Result::Err(PRAllocFail { msg: format!("Free-list was unable to allocate {} pages", required_pages) });
         } else {
             sync.pages_currently_on_freelist -= required_pages;
             if page_offset > sync.highwater_mark {
@@ -306,7 +306,7 @@ impl<VM: VMBinding> FreeListPageResource<VM> {
             unsafe { self.allocate_contiguous_chunks(space_descriptor, PAGES_IN_CHUNK, &mut sync) };
 
         if page_offset == freelist::FAILURE {
-            return Result::Err(PRAllocFail);
+            return Result::Err(PRAllocFail { msg: String::from("Free-list was unable to allocate 1 chunk") });
         } else {
             sync.pages_currently_on_freelist -= PAGES_IN_CHUNK;
             if page_offset > sync.highwater_mark {
@@ -394,6 +394,14 @@ impl<VM: VMBinding> FreeListPageResource<VM> {
 
         if self.protect_memory_on_release.is_some() {
             self.mprotect(first, pages as _);
+        }
+
+        #[cfg(feature = "madvise_free")]
+        {
+            let bytes = (pages as usize) << crate::util::constants::LOG_BYTES_IN_PAGE;
+            if let Err(e) = crate::util::memory::madvise_free(first, bytes) {
+                warn!("Could not madvise pages {} -> {}, with error {:?}", first, first + bytes, e);
+            }
         }
 
         self.common.accounting.release(pages as _);

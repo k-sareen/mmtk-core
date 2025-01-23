@@ -148,7 +148,7 @@ impl<VM: VMBinding> PageResource<VM> for MonotonePageResource<VM> {
         debug_assert!(rtn >= sync.cursor && rtn < sync.cursor + bytes);
         if tmp > sync.sentinel {
             //debug!("tmp={:?} > sync.sentinel={:?}", tmp, sync.sentinel);
-            Result::Err(PRAllocFail)
+            Result::Err(PRAllocFail { msg: format!("Cursor > sentinel: {} > {}", tmp, sync.sentinel) })
         } else {
             //debug!("tmp={:?} <= sync.sentinel={:?}", tmp, sync.sentinel);
             sync.cursor = tmp;
@@ -386,6 +386,13 @@ impl<VM: VMBinding> MonotonePageResource<VM> {
                 MonotonePageResourceConditional::Contiguous { start: _start, .. } => _start,
                 _ => unreachable!(),
             };
+            #[cfg(feature = "madvise_free")]
+            {
+                let bytes = guard.cursor - guard.current_chunk;
+                if let Err(e) = crate::util::memory::madvise_free(guard.cursor, bytes) {
+                    warn!("Could not madvise pages {} -> {}, with error {:?}", guard.cursor, guard.cursor + bytes, e);
+                }
+            }
             guard.current_chunk = guard.cursor;
         } else if !guard.cursor.is_zero() {
             let bytes = guard.cursor - guard.current_chunk;
@@ -461,6 +468,12 @@ impl<VM: VMBinding> MonotonePageResource<VM> {
     fn release_pages_extent(&self, _first: Address, bytes: usize) {
         let pages = crate::util::conversions::bytes_to_pages_up(bytes);
         debug_assert!(bytes == crate::util::conversions::pages_to_bytes(pages));
+
+        #[cfg(feature = "madvise_free")]
+        if let Err(e) = crate::util::memory::madvise_free(_first, bytes) {
+            warn!("Could not madvise pages {} -> {}, with error {:?}", _first, _first + bytes, e);
+        }
+
         // FIXME ZERO_PAGES_ON_RELEASE
         // FIXME Options.protectOnRelease
         // FIXME VM.events.tracePageReleased

@@ -183,7 +183,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     debug!("Space.acquire(), returned = {}", res.start);
                     res.start
                 }
-                Err(_) => {
+                Err(e) => {
                     #[cfg(feature = "atrace_alloc_slowpath")]
                     let failed_alloc_event = atrace::begin_scoped_event(
                         atrace::AtraceTag::Dalvik,
@@ -193,7 +193,8 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     // We thought we had memory to allocate, but somehow failed the allocation. Will force a GC.
                     assert!(
                         allow_gc,
-                        "Physical allocation failed when GC is not allowed!"
+                        "Physical allocation failed when GC is not allowed!: {}",
+                        e.msg,
                     );
 
                     let gc_performed = self.get_gc_trigger().poll(true, Some(self.as_space()));

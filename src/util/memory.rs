@@ -220,6 +220,34 @@ pub fn dump_ram_around_address(addr: Address, bytes: usize) -> String {
     string
 }
 
+/// Dump RAM around a given address. Note that be careful when using this function as it may
+/// segfault for unmapped memory. ONLY use it for locations that are KNOWN to be broken AND
+/// allocated by MMTk.
+pub fn dump_ram_around_address_prealloc(addr: Address, bytes: usize, data: &mut String) {
+    use std::fmt::Write;
+    write!(data, "Memory dump around {:?} ({} bytes):\n", addr, bytes).unwrap();
+    let end_addr = (addr + bytes).to_ptr::<usize>();
+    let mut current = (addr - bytes).to_ptr::<usize>();
+    while current < end_addr {
+        unsafe {
+            if current == addr.to_ptr::<usize>() {
+                data.push_str(" | ");
+            } else {
+                data.push_str(" ");
+            }
+            let s = unsafe { current.read() };
+            #[cfg(target_pointer_width = "64")]
+            write!(data, "{:#018x}", s).unwrap();
+            // data.push_str(format!("{:#018x}", s).as_str());
+            #[cfg(target_pointer_width = "32")]
+            write!(data, "{:#010x}", s).unwrap();
+            // data.push_str(format!("{:#010x}", s).as_str());
+            current = current.add(1);
+        }
+    }
+    write!(data, "\n").unwrap();
+}
+
 /// Demand-zero mmap:
 /// This function mmaps the memory and guarantees to zero all mapped memory.
 /// This function WILL overwrite existing memory mapping. The user of this function
@@ -345,6 +373,14 @@ fn mmap_fixed(
 /// Unmap the given memory (in page granularity). This wraps the unsafe libc munmap call.
 pub fn munmap(start: Address, size: usize) -> Result<()> {
     wrap_libc_call(&|| unsafe { libc::munmap(start.to_mut_ptr(), size) }, 0)
+}
+
+#[cfg(feature = "madvise_free")]
+pub fn madvise_free(start: Address, size: usize) -> Result<()> {
+    wrap_libc_call(
+        &|| unsafe { libc::madvise(start.to_mut_ptr(), size, libc::MADV_FREE) },
+        0,
+    )
 }
 
 /// Properly handle errors from a mmap Result, including invoking the binding code in the case of
