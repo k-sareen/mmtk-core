@@ -160,9 +160,9 @@ pub fn dump_ram_around_address(addr: Address, bytes: usize) -> String {
 /// the memory has been reserved by mmtk (e.g. after the use of mmap_noreserve()). Otherwise using this function
 /// may corrupt others' data.
 #[allow(clippy::let_and_return)] // Zeroing is not neceesary for some OS/s
-pub unsafe fn dzmmap(start: Address, size: usize, strategy: MmapStrategy) -> Result<()> {
+pub unsafe fn dzmmap(start: Address, size: usize, name: Option<&str>, strategy: MmapStrategy) -> Result<()> {
     let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_FIXED;
-    let ret = mmap_fixed(start, size, flags, strategy);
+    let ret = mmap_fixed(start, size, flags, name, strategy);
     // We do not need to explicitly zero for Linux (memory is guaranteed to be zeroed)
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     if ret.is_ok() {
@@ -174,9 +174,9 @@ pub unsafe fn dzmmap(start: Address, size: usize, strategy: MmapStrategy) -> Res
 /// This function mmaps the memory and guarantees to zero all mapped memory.
 /// This function will not overwrite existing memory mapping, and it will result Err if there is an existing mapping.
 #[allow(clippy::let_and_return)] // Zeroing is not neceesary for some OS/s
-pub fn dzmmap_noreplace(start: Address, size: usize, strategy: MmapStrategy) -> Result<()> {
+pub fn dzmmap_noreplace(start: Address, size: usize, name: Option<&str>, strategy: MmapStrategy) -> Result<()> {
     let flags = MMAP_FLAGS;
-    let ret = mmap_fixed(start, size, flags, strategy);
+    let ret = mmap_fixed(start, size, flags, name, strategy);
     // We do not need to explicitly zero for Linux (memory is guaranteed to be zeroed)
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     if ret.is_ok() {
@@ -189,16 +189,17 @@ pub fn dzmmap_noreplace(start: Address, size: usize, strategy: MmapStrategy) -> 
 /// This function does not reserve swap space for this mapping, which means there is no guarantee that writes to the
 /// mapping can always be successful. In case of out of physical memory, one may get a segfault for writing to the mapping.
 /// We can use this to reserve the address range, and then later overwrites the mapping with dzmmap().
-pub fn mmap_noreserve(start: Address, size: usize, mut strategy: MmapStrategy) -> Result<()> {
+pub fn mmap_noreserve(start: Address, size: usize, name: Option<&str>, mut strategy: MmapStrategy) -> Result<()> {
     strategy.prot = MmapProtection::NoAccess;
     let flags = MMAP_FLAGS | libc::MAP_NORESERVE;
-    mmap_fixed(start, size, flags, strategy)
+    mmap_fixed(start, size, flags, name, strategy)
 }
 
 fn mmap_fixed(
     start: Address,
     size: usize,
     flags: libc::c_int,
+    name: Option<&str>,
     strategy: MmapStrategy,
 ) -> Result<()> {
     let ptr = start.to_mut_ptr();
@@ -207,6 +208,9 @@ fn mmap_fixed(
         &|| unsafe { libc::mmap(start.to_mut_ptr(), size, prot, flags, -1, 0) },
         ptr,
     )?;
+    if let Some(name) = name {
+        set_debug_name(start, size, name);
+    }
     match strategy.huge_page {
         HugePageSupport::No => Ok(()),
         HugePageSupport::TransparentHugePages => {
@@ -221,6 +225,16 @@ fn mmap_fixed(
             // the validation on non-Linux OSes
             #[cfg(not(target_os = "linux"))]
             unreachable!()
+        }
+    }
+}
+
+fn set_debug_name(_start: Address, _size: usize, _name: &str) {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        unsafe {
+            let c_string = std::ffi::CString::new(format!("MMTk-{}", _name)).unwrap();
+            libc::prctl(libc::PR_SET_VMA, libc::PR_SET_VMA_ANON_NAME, _start.as_usize(), _size, c_string.as_ptr());
         }
     }
 }
@@ -280,6 +294,7 @@ pub(crate) fn panic_if_unmapped(start: Address, size: usize) {
         start,
         size,
         flags,
+        None,
         MmapStrategy {
             huge_page: HugePageSupport::No,
             prot: MmapProtection::ReadWrite,

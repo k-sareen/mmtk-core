@@ -70,6 +70,10 @@ impl<VM: VMBinding> SFT for ZygoteSpace<VM> {
         }
     }
 
+    fn is_from_space(&self, object: ObjectReference) -> bool {
+        self.immix_space.is_from_space(object)
+    }
+
     #[cfg(feature = "object_pinning")]
     fn pin_object(&self, object: ObjectReference) -> bool {
         self.immix_space.pin_object(object)

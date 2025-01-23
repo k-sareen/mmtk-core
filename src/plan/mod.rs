@@ -49,7 +49,7 @@ mod markcompact;
 mod marksweep;
 mod nogc;
 mod pageprotect;
-mod semispace;
+pub mod semispace;
 
 pub(crate) use generational::global::is_nursery_gc;
 pub(crate) use generational::global::GenerationalPlan;

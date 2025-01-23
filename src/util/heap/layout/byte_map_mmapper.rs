@@ -44,7 +44,7 @@ impl Mmapper for ByteMapMmapper {
         }
     }
 
-    fn ensure_mapped(&self, start: Address, pages: usize, strategy: MmapStrategy) -> Result<()> {
+    fn ensure_mapped(&self, start: Address, pages: usize, name: Option<&str>, strategy: MmapStrategy) -> Result<()> {
         let start_chunk = Self::address_to_mmap_chunks_down(start);
         let end_chunk = Self::address_to_mmap_chunks_up(start + pages_to_bytes(pages));
         trace!(
@@ -62,7 +62,7 @@ impl Mmapper for ByteMapMmapper {
 
             let mmap_start = Self::mmap_chunks_to_address(chunk);
             let _guard = self.lock.lock().unwrap();
-            MapState::transition_to_mapped(&self.mapped[chunk], mmap_start, strategy).unwrap();
+            MapState::transition_to_mapped(&self.mapped[chunk], mmap_start, name, strategy).unwrap();
         }
 
         Ok(())
@@ -72,6 +72,7 @@ impl Mmapper for ByteMapMmapper {
         &self,
         start: Address,
         pages: usize,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()> {
         let start_chunk = Self::address_to_mmap_chunks_down(start);
@@ -91,7 +92,7 @@ impl Mmapper for ByteMapMmapper {
 
             let mmap_start = Self::mmap_chunks_to_address(chunk);
             let _guard = self.lock.lock().unwrap();
-            MapState::transition_to_quarantined(&self.mapped[chunk], mmap_start, strategy).unwrap();
+            MapState::transition_to_quarantined(&self.mapped[chunk], mmap_start, name, strategy).unwrap();
         }
 
         Ok(())

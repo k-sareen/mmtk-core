@@ -132,6 +132,12 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         // If the object is forwarded, it is live, too.
         object_forwarding::is_forwarded::<VM>(object)
     }
+
+    fn is_from_space(&self, object: ObjectReference) -> bool {
+        let block = Block::from_unaligned_address(object.to_raw_address());
+        block.is_defrag_source()
+    }
+
     #[cfg(feature = "object_pinning")]
     fn pin_object(&self, object: ObjectReference) -> bool {
         VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.pin_object::<VM>(object)

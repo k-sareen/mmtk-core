@@ -241,7 +241,7 @@ impl<VM: VMBinding> LockFreeImmortalSpace<VM> {
             *args.options.transparent_hugepages,
             crate::util::memory::MmapProtection::ReadWrite,
         );
-        crate::util::memory::dzmmap_noreplace(start, aligned_total_bytes, strategy).unwrap();
+        crate::util::memory::dzmmap_noreplace(start, aligned_total_bytes, Some(space.name), strategy).unwrap();
         if space
             .metadata
             .try_map_metadata_space(start, aligned_total_bytes)

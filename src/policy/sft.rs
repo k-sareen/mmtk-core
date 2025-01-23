@@ -39,6 +39,10 @@ pub trait SFT {
     /// Is the object live, determined by the policy?
     fn is_live(&self, object: ObjectReference) -> bool;
 
+    fn is_from_space(&self, _object: ObjectReference) -> bool {
+        false
+    }
+
     /// Is the object reachable, determined by the policy?
     /// Note: Objects in ImmortalSpace may have `is_live = true` but are actually unreachable.
     fn is_reachable(&self, object: ObjectReference) -> bool {

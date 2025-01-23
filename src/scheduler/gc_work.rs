@@ -299,7 +299,7 @@ impl<E: ProcessEdgesWork> ObjectTracerContext<E::VM> for ProcessEdgesWorkTracerC
         // We should refactor ProcessEdgesWork so that it uses `worker` locally, not as a member.
         process_edges_work.set_worker(worker);
 
-        // Cretae the tracer.
+        // Create the tracer.
         let mut tracer = ProcessEdgesWorkTracer {
             process_edges_work,
             stage: self.stage,
@@ -850,6 +850,8 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
                     .increase_live_bytes(VM::VMObjectModel::get_current_size(object));
 
                 if <VM as VMBinding>::VMScanning::support_slot_enqueuing(tls, object) {
+                    use crate::util::options::PlanSelector;
+
                     trace!("Scan object (slot) {}", object);
                     debug_assert!(
                         <VM as VMBinding>::VMObjectModel::is_object_sane(object),

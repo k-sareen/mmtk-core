@@ -218,8 +218,14 @@ impl<VM: VMBinding> MMTK<VM> {
         use crate::util::constants::LOG_BYTES_IN_PAGE;
         use crate::util::heap::layout::vm_layout::vm_layout;
         let heap_pages = (vm_layout().heap_end - vm_layout().heap_start) >> LOG_BYTES_IN_PAGE;
-        let quarantine_strategy = MmapStrategy::new(false, crate::util::memory::MmapProtection::NoAccess);
-        MMAPPER.quarantine_address_range(vm_layout().heap_start, heap_pages, quarantine_strategy);
+        let quarantine_strategy =
+            MmapStrategy::new(false, crate::util::memory::MmapProtection::NoAccess);
+        MMAPPER.quarantine_address_range(
+            vm_layout().heap_start,
+            heap_pages,
+            Some("quarantined"),
+            quarantine_strategy,
+        );
 
         // XXX(kunals): If we are using NoGC then mmap and zero the entire space. This means that
         // each page in the heap has been touched at least once and hence the mutator should not
@@ -230,7 +236,12 @@ impl<VM: VMBinding> MMTK<VM> {
                 *options.transparent_hugepages,
                 crate::util::memory::MmapProtection::ReadWrite,
             );
-            MMAPPER.ensure_mapped(vm_layout().heap_start, heap_pages, nogc_strategy);
+            MMAPPER.ensure_mapped(
+                vm_layout().heap_start,
+                heap_pages,
+                Some("MMTk heap"),
+                nogc_strategy,
+            );
             crate::util::memory::zero(vm_layout().heap_start, heap_pages << LOG_BYTES_IN_PAGE);
         }
 

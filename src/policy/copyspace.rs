@@ -57,6 +57,10 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
         self.is_live(object)
     }
 
+    fn is_from_space(&self, _object: ObjectReference) -> bool {
+        self.is_from_space()
+    }
+
     fn initialize_object_metadata(&self, _object: ObjectReference, _alloc: bool) {
         #[cfg(feature = "vo_bit")]
         crate::util::metadata::vo_bit::set_vo_bit::<VM>(_object);

@@ -144,7 +144,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                         if let Err(mmap_error) = self
                             .common()
                             .mmapper
-                            .ensure_mapped(res.start, res.pages, self.common().mmap_strategy())
+                            .ensure_mapped(res.start, res.pages, Some(self.get_name()), self.common().mmap_strategy())
                             .and(
                                 self.common()
                                     .metadata

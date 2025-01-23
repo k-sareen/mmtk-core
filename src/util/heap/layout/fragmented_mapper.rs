@@ -93,6 +93,7 @@ impl Mmapper for FragmentedMapper {
         &self,
         mut start: Address,
         pages: usize,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()> {
         debug_assert!(start.is_aligned_to(BYTES_IN_PAGE));
@@ -139,6 +140,7 @@ impl Mmapper for FragmentedMapper {
             MapState::bulk_transition_to_quarantined(
                 state_slices.as_slice(),
                 mmap_start,
+                name,
                 strategy,
             )?;
         }
@@ -150,6 +152,7 @@ impl Mmapper for FragmentedMapper {
         &self,
         mut start: Address,
         pages: usize,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()> {
         let end = start + conversions::pages_to_bytes(pages);
@@ -176,7 +179,7 @@ impl Mmapper for FragmentedMapper {
 
                 let mmap_start = Self::chunk_index_to_address(base, chunk);
                 let _guard = self.lock.lock().unwrap();
-                MapState::transition_to_mapped(entry, mmap_start, strategy)?;
+                MapState::transition_to_mapped(entry, mmap_start, name, strategy)?;
             }
             start = high;
         }

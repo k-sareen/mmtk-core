@@ -598,6 +598,10 @@ impl ObjectReference {
         unsafe { SFT_MAP.get_unchecked(self.to_address::<VM>()) }.is_live(self)
     }
 
+    pub fn is_from_space(self) -> bool {
+        unsafe { SFT_MAP.get_unchecked(Address(self.0.get())) }.is_from_space(self)
+    }
+
     /// Can the object be moved?
     pub fn is_movable<VM: VMBinding>(self) -> bool {
         unsafe { SFT_MAP.get_unchecked(self.to_address::<VM>()) }.is_movable()

@@ -36,6 +36,7 @@ pub trait Mmapper: Sync {
         &self,
         start: Address,
         pages: usize,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()>;
 
@@ -49,7 +50,7 @@ pub trait Mmapper: Sync {
     // NOTE: There is a monotonicity assumption so that only updates require lock
     // acquisition.
     // TODO: Fix the above to support unmapping.
-    fn ensure_mapped(&self, start: Address, pages: usize, strategy: MmapStrategy) -> Result<()>;
+    fn ensure_mapped(&self, start: Address, pages: usize, name: Option<&str>, strategy: MmapStrategy) -> Result<()>;
 
     /// Is the page pointed to by this address mapped? Returns true if
     /// the page at the given address is mapped.
@@ -87,6 +88,7 @@ impl MapState {
     pub(super) fn transition_to_mapped(
         state: &Atomic<MapState>,
         mmap_start: Address,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()> {
         debug!(
@@ -95,9 +97,9 @@ impl MapState {
             mmap_start + MMAP_CHUNK_BYTES
         );
         let res = match state.load(Ordering::Relaxed) {
-            MapState::Unmapped => dzmmap_noreplace(mmap_start, MMAP_CHUNK_BYTES, strategy),
+            MapState::Unmapped => dzmmap_noreplace(mmap_start, MMAP_CHUNK_BYTES, name, strategy),
             MapState::Protected => munprotect(mmap_start, MMAP_CHUNK_BYTES, strategy.prot),
-            MapState::Quarantined => unsafe { dzmmap(mmap_start, MMAP_CHUNK_BYTES, strategy) },
+            MapState::Quarantined => unsafe { dzmmap(mmap_start, MMAP_CHUNK_BYTES, name, strategy) },
             // might have become MapState::Mapped here
             MapState::Mapped => Ok(()),
         };
@@ -112,6 +114,7 @@ impl MapState {
     pub(super) fn transition_to_quarantined(
         state: &Atomic<MapState>,
         mmap_start: Address,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()> {
         trace!(
@@ -120,7 +123,7 @@ impl MapState {
             mmap_start + MMAP_CHUNK_BYTES
         );
         let res = match state.load(Ordering::Relaxed) {
-            MapState::Unmapped => mmap_noreserve(mmap_start, MMAP_CHUNK_BYTES, strategy),
+            MapState::Unmapped => mmap_noreserve(mmap_start, MMAP_CHUNK_BYTES, name, strategy),
             MapState::Quarantined => Ok(()),
             MapState::Mapped => {
                 // If a chunk is mapped by us and we try to quarantine it, we simply don't do anything.
@@ -156,6 +159,7 @@ impl MapState {
     pub(super) fn bulk_transition_to_quarantined(
         state_slices: &[&[Atomic<MapState>]],
         mmap_start: Address,
+        name: Option<&str>,
         strategy: MmapStrategy,
     ) -> Result<()> {
         trace!(
@@ -179,7 +183,7 @@ impl MapState {
             match group.key {
                 MapState::Unmapped => {
                     trace!("Trying to quarantine {} - {}", start_addr, end_addr);
-                    mmap_noreserve(start_addr, end_addr - start_addr, strategy)?;
+                    mmap_noreserve(start_addr, end_addr - start_addr, name, strategy)?;
 
                     for state in group {
                         state.store(MapState::Quarantined, Ordering::Relaxed);

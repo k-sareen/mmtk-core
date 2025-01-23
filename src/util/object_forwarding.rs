@@ -103,6 +103,11 @@ pub fn forward_object<VM: VMBinding>(
     semantics: CopySemantics,
     copy_context: &mut GCWorkerCopyContext<VM>,
 ) -> ObjectReference {
+    debug_assert!(
+        object.is_from_space(),
+        "Object {} is not in from space!",
+        object,
+    );
     let new_object = VM::VMObjectModel::copy(object, semantics, copy_context);
     if let Some(shift) = forwarding_bits_offset_in_forwarding_pointer::<VM>() {
         if cfg!(not(feature = "single_worker")) {
@@ -162,12 +167,12 @@ pub fn is_forwarded_or_being_forwarded<VM: VMBinding>(object: ObjectReference) -
     get_forwarding_status::<VM>(object) != FORWARDING_NOT_TRIGGERED_YET
 }
 
-pub fn state_is_forwarded_or_being_forwarded(forwarding_bits: u8) -> bool {
-    forwarding_bits != FORWARDING_NOT_TRIGGERED_YET
+pub fn is_not_forwarded<VM: VMBinding>(object: ObjectReference) -> bool {
+    get_forwarding_status::<VM>(object) == FORWARDING_NOT_TRIGGERED_YET
 }
 
-pub fn state_is_being_forwarded(forwarding_bits: u8) -> bool {
-    forwarding_bits == BEING_FORWARDED
+pub fn state_is_forwarded_or_being_forwarded(forwarding_bits: u8) -> bool {
+    forwarding_bits != FORWARDING_NOT_TRIGGERED_YET
 }
 
 /// Zero the forwarding bits of an object.
