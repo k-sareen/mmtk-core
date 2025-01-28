@@ -24,6 +24,7 @@ pub struct PowerStats {
     pub channel_ids: HashMap<String, i32>,
     pub channel_infos: Vec<PowerStatsChannel>,
     pub reading: Vec<PowerStatsEnergyMeasurement>,
+    prev_reading: Vec<PowerStatsEnergyMeasurement>,
 }
 
 /// Find the earliest position in `text` (starting at `start`) of any character in `chars`.
@@ -102,6 +103,7 @@ impl PowerStats {
             channel_ids: HashMap::new(),
             channel_infos: Vec::new(),
             reading: Vec::new(),
+            prev_reading: Vec::new(),
         }
     }
 
@@ -137,10 +139,7 @@ impl PowerStats {
                                 }
                             }
                         } else {
-                            error!(
-                                "Failed to read device name for {}",
-                                device_path.display()
-                            );
+                            error!("Failed to read device name for {}", device_path.display());
                             error!("Error: {}", device_name.err().unwrap());
                         }
                     }
@@ -267,14 +266,11 @@ impl PowerStats {
         Ok(())
     }
 
-    pub fn read_energy_meter(&mut self, ids: &[i32]) -> Vec<PowerStatsEnergyMeasurement> {
+    fn read_energy_meter(&mut self, ids: &[i32]) -> Vec<PowerStatsEnergyMeasurement> {
         let device_paths = self.device_paths.clone();
         for device_path in device_paths.keys() {
             if self.parse_energy_value(device_path).is_err() {
-                error!(
-                    "Failed to read energy value for {}",
-                    device_path.display()
-                );
+                error!("Failed to read energy value for {}", device_path.display());
                 return vec![];
             }
         }
@@ -296,7 +292,44 @@ impl PowerStats {
         vec![]
     }
 
-    pub fn get_energy_meter_info(&self) -> &Vec<PowerStatsChannel> {
+    fn get_energy_meter_info(&self) -> &Vec<PowerStatsChannel> {
         &self.channel_infos
+    }
+
+    pub fn start_all(&mut self) {
+        let energy_stats = self.read_energy_meter(&[]);
+        self.prev_reading = energy_stats;
+    }
+
+    pub fn stop_all(&mut self) {
+        self.read_energy_meter(&[]);
+    }
+
+    pub fn print_column_names(&self, output_string: &mut String) {
+        for channel_info in self.get_energy_meter_info() {
+            output_string.push_str(
+                format!(
+                    "{}.energy\t{}.power\t",
+                    channel_info.name, channel_info.name
+                )
+                .as_str(),
+            );
+        }
+        output_string.push_str("total.energy\ttotal.power\t");
+    }
+
+    pub fn print_stats(&self, output_string: &mut String) {
+        let mut total_power = 0_f64;
+        let mut total_energy = 0;
+        for channel_info in self.get_energy_meter_info() {
+            let index = self.channel_ids[&channel_info.name] as usize;
+            let energy = self.reading[index].energy_uW_s - self.prev_reading[index].energy_uW_s;
+            let duration = self.reading[index].duration_ms - self.prev_reading[index].duration_ms;
+            let power = energy as f64 / (duration as f64 / 1000_f64);
+            total_power += power;
+            total_energy += energy;
+            output_string.push_str(format!("{}\t{:.*}\t", energy, 2, power).as_str());
+        }
+        output_string.push_str(format!("{}\t{:.*}\t", total_energy, 2, total_power).as_str());
     }
 }

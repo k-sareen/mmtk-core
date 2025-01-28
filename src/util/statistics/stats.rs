@@ -49,7 +49,6 @@ pub struct Stats {
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
     exceeded_phase_limit: AtomicBool,
     pub power_stats: Arc<Mutex<PowerStats>>,
-    pub prev_power_stats: Arc<Mutex<Vec<PowerStatsEnergyMeasurement>>>,
 }
 
 impl Stats {
@@ -76,7 +75,6 @@ impl Stats {
             counters: Mutex::new(counters),
             exceeded_phase_limit: AtomicBool::new(false),
             power_stats: Arc::new(Mutex::new(PowerStats::new())),
-            prev_power_stats: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -211,6 +209,10 @@ impl Stats {
         for value in scheduler_stat.values() {
             output_string.push_str(format!("{}\t", value).as_str());
         }
+        {
+            let power_stats = self.power_stats.lock().unwrap();
+            power_stats.print_stats(&mut output_string);
+        }
         output_string.push_str(
             "\n------------------------------ End MMTk Statistics -----------------------------\n",
         );
@@ -235,6 +237,8 @@ impl Stats {
         for name in scheduler_stat.keys() {
             output_string.push_str(format!("{}\t", name).as_str());
         }
+        let power_stats = self.power_stats.lock().unwrap();
+        power_stats.print_column_names(output_string);
         output_string.push('\n');
     }
 
@@ -252,37 +256,12 @@ impl Stats {
             }
         }
         let mut power_stats = self.power_stats.lock().unwrap();
-        let mut prev_power_stats = self.prev_power_stats.lock().unwrap();
-        let readings = power_stats.read_energy_meter(vec![].as_slice());
-        *prev_power_stats = readings;
+        power_stats.start_all();
     }
 
     pub fn stop_all<VM: VMBinding>(&self, mmtk: &'static MMTK<VM>) {
         self.stop_all_counters();
-        let mut power_stats = self.power_stats.lock().unwrap();
-        let prev_power_stats = self.prev_power_stats.lock().unwrap();
-        let channel_infos = power_stats.get_energy_meter_info().clone();
-        let readings = power_stats.read_energy_meter(vec![].as_slice());
         self.print_stats(mmtk);
-        let mut total_energy = 0;
-        let mut total_power = 0;
-        for energy_stat in readings {
-            let channel_info = &channel_infos[energy_stat.id as usize];
-            let prev_energy_stat = &prev_power_stats[energy_stat.id as usize];
-            let energy = energy_stat.energy_uW_s - prev_energy_stat.energy_uW_s;
-            let duration = energy_stat.duration_ms - prev_energy_stat.duration_ms;
-            let power = energy / (duration / 1000);
-            total_energy += energy;
-            total_power += power;
-            warn!(
-                "kunals: Energy consumption for {} (subsystem: {}) is {} uWs, power is {} uW",
-                channel_info.name, channel_info.subsystem, energy, power,
-            );
-        }
-        warn!(
-            "kunals: Total energy consumption is {} uWs, total power is {} uW",
-            total_energy, total_power
-        );
     }
 
     fn stop_all_counters(&self) {
@@ -290,6 +269,8 @@ impl Stats {
         for c in &(*counters) {
             c.lock().unwrap().stop();
         }
+        let mut power_stats = self.power_stats.lock().unwrap();
+        power_stats.stop_all();
         self.shared.set_gathering_stats(false);
     }
 
