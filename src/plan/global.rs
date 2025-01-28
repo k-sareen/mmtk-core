@@ -648,7 +648,10 @@ impl<VM: VMBinding> CommonPlan<VM> {
 
         self.immortal.reserved_pages()
             + self.los.reserved_pages()
-            + self.nonmoving.reserved_pages()
+            // XXX(kunals): We ignore the nonmoving space for now since it is
+            // uninteresting to us, and it is the biggest source of heap size
+            // discrepancy between stock ART and MMTk
+            // + self.nonmoving.reserved_pages()
             + self.base.get_used_pages()
             + zygote_pages
     }
