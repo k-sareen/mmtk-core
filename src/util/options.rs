@@ -782,7 +782,7 @@ options! {
     // The plan to use.
     plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::Immix,
     /// Number of GC worker threads.
-    threads:               usize                [env_var: true, command_line: true] [|v: &usize| *v > 0]    = num_cpus::get(),
+    threads:               usize                [env_var: true, command_line: true] [|v: &usize| *v > 0]    = get_total_num_cpus() as usize,
     /// Enable an optimization that only scans the part of the stack that has changed since the last GC (not supported)
     use_short_stack_scans: bool                 [env_var: true, command_line: true]  [always_valid] = false,
     /// Enable a return barrier (not supported)
