@@ -594,7 +594,7 @@ pub struct CommonPlan<VM: VMBinding> {
     #[space]
     pub los: LargeObjectSpace<VM>,
     #[space]
-    pub nonmoving: MarkSweepSpace<VM>,
+    pub nonmoving: ImmortalSpace<VM>,
     #[post_scan]
     #[space]
     #[copy_semantics(CopySemantics::DefaultCopy)]
@@ -628,7 +628,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 args.get_space_args("los", true, false, VMRequest::discontiguous()),
                 false,
             ),
-            nonmoving: MarkSweepSpace::new(args.get_space_args(
+            nonmoving: ImmortalSpace::new(args.get_space_args(
                 "nonmoving",
                 true,
                 false,
@@ -681,12 +681,13 @@ impl<VM: VMBinding> CommonPlan<VM> {
         }
         if self.nonmoving.in_space(object) {
             trace!("trace_object: object in nonmoving space");
-            return self.nonmoving.trace_object::<Q, DEFAULT_TRACE>(queue, object, None, worker);
+            // return self.nonmoving.trace_object::<Q, DEFAULT_TRACE>(queue, object, None, worker);
+            return self.nonmoving.trace_object::<Q>(queue, object);
         }
         if self.zygote.in_space(object) {
             if self.has_zygote_space() {
                 trace!("trace_object: object {} in frozen Zygote", object);
-                return object
+                return object;
             } else {
                 assert!(
                     self.is_zygote_process(),
@@ -714,7 +715,8 @@ impl<VM: VMBinding> CommonPlan<VM> {
     ) {
         self.immortal.prepare();
         self.los.prepare(full_heap);
-        self.nonmoving.prepare(full_heap);
+        self.nonmoving.prepare();
+        // self.nonmoving.prepare(full_heap);
         if let Some(zygote_space) = self.zygote.as_mut() {
             zygote_space.prepare(
                 full_heap,
@@ -761,7 +763,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         &self.los
     }
 
-    pub fn get_nonmoving(&self) -> &MarkSweepSpace<VM> {
+    pub fn get_nonmoving(&self) -> &ImmortalSpace<VM> {
         &self.nonmoving
     }
 
