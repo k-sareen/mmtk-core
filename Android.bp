@@ -28,22 +28,22 @@ rust_library {
         "default",
         "vm_space",
         "perf_counter",
-        "eager_sweeping",
+        // "eager_sweeping",
         "object_pinning",
         "set_unlog_bits_vm_space",
         // "sanity",             // debug only
-        "poison_on_release",  // debug only
-        "extreme_assertions", // debug only
+        // "poison_on_release",  // debug only
+        // "extreme_assertions", // debug only
     ],
     // "debug" build
-    flags: [
-        "-C opt-level=0",
-        "-C debuginfo=2",
-        "-C strip=none",
-        "-C debug-assertions=true",
-        "-C overflow-checks=true",
-        "-C codegen-units=256",
-    ],
+    // flags: [
+    //     "-C opt-level=0",
+    //     "-C debuginfo=2",
+    //     "-C strip=none",
+    //     "-C debug-assertions=true",
+    //     "-C overflow-checks=true",
+    //     "-C codegen-units=256",
+    // ],
     // "release" build
     // flags: [
     //     "-C opt-level=3",
@@ -51,7 +51,7 @@ rust_library {
     //     "-C strip=symbols",
     //     "-C debug-assertions=false",
     //     "-C overflow-checks=false",
-    //     "-C codegen-units=16",
+    //     "-C codegen-units=1",
     // ],
     rustlibs: [
         "libatomic_rust",
