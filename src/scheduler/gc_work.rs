@@ -3,6 +3,7 @@ use super::*;
 use crate::global_state::GcStatus;
 use crate::plan::ObjectsClosure;
 use crate::plan::VectorObjectQueue;
+use crate::util::rust_util::unlikely;
 use crate::util::*;
 use crate::vm::slot::Slot;
 use crate::vm::*;
@@ -830,7 +831,7 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
         &self,
         buffer: &[ObjectReference],
         worker: &mut GCWorker<<Self::E as ProcessEdgesWork>::VM>,
-        _mmtk: &'static MMTK<<Self::E as ProcessEdgesWork>::VM>,
+        mmtk: &'static MMTK<<Self::E as ProcessEdgesWork>::VM>,
     ) {
         let tls = worker.tls;
 
@@ -855,8 +856,10 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
                         "Object {:?} is not sane!",
                         object,
                     );
+                    use std::sync::atomic::Ordering;
                     // If an object supports slot-enqueuing, we enqueue its slots.
                     <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
+                    // mmtk.state.scan_object_count.fetch_add(1, Ordering::Relaxed);
                     self.post_scan_object(object);
                 } else {
                     // If an object does not support slot-enqueuing, we have to use
@@ -992,6 +995,9 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
             // Skip slots that are not holding an object reference.
             return;
         };
+        // XXX(kunals): This debug assertion is incorrect since if the object has been moved,
+        // the TIB would have been overwritten by the forwarding pointer. `is_object_sane` is
+        // not aware of forwarding pointers so it will fail
         debug_assert!(
             <VM as VMBinding>::VMObjectModel::is_object_sane(object),
             "Object {:?} from slot {:?} is not sane!",
@@ -999,6 +1005,35 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
             slot,
         );
         let new_object = self.trace_object(object);
+
+        // use crate::policy::space::Space;
+        // use std::sync::atomic::Ordering;
+        // self.base
+        //     .mmtk()
+        //     .state
+        //     .trace_object_count
+        //     .fetch_add(1, Ordering::Relaxed);
+        // let vm_space = &self.base.mmtk().get_plan().base().vm_space;
+        // if unlikely(!vm_space.initialized) && vm_space.address_in_space(slot.as_address()) {
+        //     {
+        //         let mut slots = vm_space.slots.lock().unwrap();
+        //         slots.push(slot);
+        //     }
+        //     #[cfg(debug_assertions)]
+        //     {
+        //         let mut slots_set = vm_space.slots_set.lock().unwrap();
+        //         slots_set.insert(slot);
+        //     }
+        // }
+
+        // #[cfg(debug_assertions)]
+        // if vm_space.initialized && vm_space.address_in_space(slot.as_address()) {
+        //     let slots_set = vm_space.slots_set.lock().unwrap();
+        //     if !slots_set.contains(&slot) {
+        //         panic!("Slot {:?} does not exist in set", slot);
+        //     }
+        // }
+
         if P::may_move_objects::<KIND>() && new_object != object {
             slot.store(new_object);
         }

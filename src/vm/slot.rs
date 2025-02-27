@@ -49,7 +49,7 @@ use crate::util::{Address, ObjectReference};
 /// Note: this trait only concerns the representation (i.e. the shape) of the slot, not its
 /// semantics, such as whether it holds strong or weak references.  If a VM holds a weak reference
 /// in a word as a pointer, it can also use `SimpleSlot` for weak reference fields.
-pub trait Slot: Copy + Send + Debug + PartialEq + Eq + Hash {
+pub trait Slot: Copy + Send + Debug + PartialEq + Eq + Hash + Ord {
     /// Load object reference from the slot.
     ///
     /// If the slot is not holding an object reference (For example, if it is holding NULL or a
@@ -86,13 +86,18 @@ pub trait Slot: Copy + Send + Debug + PartialEq + Eq + Hash {
     fn prefetch_store(&self) {
         // no-op by default
     }
+
+    /// Get raw address of the slot.
+    fn as_address(&self) -> Address {
+        unimplemented!()
+    }
 }
 
 /// A simple slot implementation that represents a word-sized slot which holds the raw address of
 /// an `ObjectReference`, or 0 if it is holding a null reference.
 ///
 /// It is the default slot type, and should be suitable for most VMs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct SimpleSlot {
     slot_addr: *mut Atomic<Address>,
@@ -108,16 +113,10 @@ impl SimpleSlot {
             slot_addr: address.to_mut_ptr(),
         }
     }
-
-    /// Get the address of the slot.
-    ///
-    /// Return the address at which the `ObjectReference` is stored.
-    pub fn as_address(&self) -> Address {
-        Address::from_mut_ptr(self.slot_addr)
-    }
 }
 
 unsafe impl Send for SimpleSlot {}
+// unsafe impl Sync for SimpleSlot {}
 
 impl Slot for SimpleSlot {
     fn load(&self) -> Option<ObjectReference> {
@@ -127,6 +126,13 @@ impl Slot for SimpleSlot {
 
     fn store(&self, object: ObjectReference) {
         unsafe { (*self.slot_addr).store(object.to_raw_address(), atomic::Ordering::Relaxed) }
+    }
+
+    /// Get the address of the slot.
+    ///
+    /// Return the address at which the `ObjectReference` is stored.
+    fn as_address(&self) -> Address {
+        Address::from_mut_ptr(self.slot_addr)
     }
 }
 

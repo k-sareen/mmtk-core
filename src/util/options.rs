@@ -1,12 +1,12 @@
 use crate::scheduler::affinity::{get_total_num_cpus, CoreId};
 use crate::util::constants::LOG_BYTES_IN_MBYTE;
 use crate::util::Address;
-use std::default::Default;
-use std::fmt::Debug;
-use std::str::FromStr;
 use perf_event::events::Event as PerfEventKind;
 use perf_event::events::Hardware as PerfEventHardware;
 use perf_event::events::Software as PerfEventSoftware;
+use std::default::Default;
+use std::fmt::Debug;
+use std::str::FromStr;
 use strum_macros::EnumString;
 
 /// The default stress factor. This is set to the max usize,
@@ -780,7 +780,7 @@ mod gc_trigger_tests {
 // At some point, we may disallow this and all the options can only be set by command line.
 options! {
     // The plan to use.
-    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::Immix,
+    plan:                  PlanSelector         [env_var: true, command_line: true] [always_valid] = PlanSelector::SemiSpace,
     /// Number of GC worker threads.
     threads:               usize                [env_var: true, command_line: true] [|v: &usize| *v > 0]    = get_total_num_cpus() as usize,
     /// Enable an optimization that only scans the part of the stack that has changed since the last GC (not supported)
