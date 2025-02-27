@@ -9,6 +9,7 @@ use super::worker_monitor::{LastParkedResult, WorkerMonitor};
 use super::*;
 use crate::global_state::GcStatus;
 use crate::mmtk::MMTK;
+use crate::policy::vmspace::ProcessVmSpaceSlots;
 use crate::util::opaque_pointer::*;
 use crate::util::options::AffinityKind;
 use crate::util::rust_util::array_from_fn;
@@ -146,6 +147,10 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
 
         // Prepare global/collectors/mutators
         self.work_buckets[WorkBucketStage::Prepare].add(Prepare::<C>::new(plan));
+
+        self.work_buckets[WorkBucketStage::Prepare].add(ProcessVmSpaceSlots::<
+            C::DefaultProcessEdges,
+        >::new(&plan.base().vm_space));
 
         // Release global/collectors/mutators
         self.work_buckets[WorkBucketStage::Release].add(Release::<C>::new(plan));
@@ -579,6 +584,18 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
 
         // Reset the triggering information.
         mmtk.state.reset_collection_trigger();
+        // let scan_count = mmtk
+        //     .state
+        //     .scan_object_count
+        //     .swap(0, std::sync::atomic::Ordering::Relaxed);
+        // let trace_count = mmtk
+        //     .state
+        //     .trace_object_count
+        //     .swap(0, std::sync::atomic::Ordering::Relaxed);
+        // println!(
+        //     "scanned {} objects; traced {} objects",
+        //     scan_count, trace_count
+        // );
 
         // Set to NotInGC after everything, and right before resuming mutators.
         mmtk.set_gc_status(GcStatus::NotInGC);

@@ -253,6 +253,7 @@ impl VMMap for Map32 {
         self.finalized
     }
 
+    #[inline(always)]
     fn get_descriptor_for_address(&self, address: Address) -> SpaceDescriptor {
         let index = address.chunk_index();
         self.descriptor_map[index]
