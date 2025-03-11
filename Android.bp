@@ -29,6 +29,7 @@ rust_library {
         "vm_space",
         "perf_counter",
         // "eager_sweeping",
+        "single_worker",
         "object_pinning",
         "set_unlog_bits_vm_space",
         // "sanity",             // debug only
