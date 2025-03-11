@@ -253,10 +253,9 @@ impl VMMap for Map32 {
         self.finalized
     }
 
-    #[inline(always)]
     fn get_descriptor_for_address(&self, address: Address) -> SpaceDescriptor {
         let index = address.chunk_index();
-        self.descriptor_map[index]
+        unsafe { *self.descriptor_map.get_unchecked(index) }
     }
 
     fn add_to_cumulative_committed_pages(&self, pages: usize) {

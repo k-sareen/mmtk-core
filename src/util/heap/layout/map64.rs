@@ -205,7 +205,6 @@ impl VMMap for Map64 {
         self.inner().finalized
     }
 
-    #[inline(always)]
     fn get_descriptor_for_address(&self, address: Address) -> SpaceDescriptor {
         let index = Self::space_index(address).unwrap();
         self.inner().descriptor_map[index]

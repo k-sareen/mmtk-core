@@ -241,6 +241,9 @@ pub trait Scanning<VM: VMBinding> {
         factory: impl RootsWorkFactory<VM::VMSlot>,
     );
 
+    /// Scan all VM space objects. Creates ScanObject work packets.
+    fn scan_vm_space_objects(_tls: VMWorkerThread, _closure: impl FnMut(Vec<ObjectReference>)) {}
+
     /// Scan VM-specific roots. The creation of all root scan tasks (except thread scanning)
     /// goes here.
     ///

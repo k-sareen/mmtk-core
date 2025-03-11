@@ -46,14 +46,18 @@ rust_library {
     //     "-C codegen-units=256",
     // ],
     // "release" build
-    // flags: [
-    //     "-C opt-level=3",
-    //     "-C debuginfo=0",
-    //     "-C strip=symbols",
-    //     "-C debug-assertions=false",
-    //     "-C overflow-checks=false",
-    //     "-C codegen-units=1",
-    // ],
+    flags: [
+        "-C lto=true",
+        "-C linker-plugin-lto=true",
+        "-C link-arg=-Wl,--no-fatal-warnings",
+        "-C opt-level=3",
+        "-C debuginfo=0",
+        // "-C debuginfo=2",
+        // "-C strip=symbols",
+        "-C debug-assertions=false",
+        "-C overflow-checks=false",
+        "-C codegen-units=16",
+    ],
     rustlibs: [
         "libatomic_rust",
         "libatomic_refcell",

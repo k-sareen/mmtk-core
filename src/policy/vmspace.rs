@@ -4,7 +4,7 @@ use crate::policy::gc_work::DEFAULT_TRACE;
 use crate::policy::sft::GCWorkerMutRef;
 use crate::policy::sft::SFT;
 use crate::policy::space::{CommonSpace, Space};
-use crate::scheduler::{gc_work::*, GCWork, GCWorkScheduler, GCWorker, WorkBucketStage};
+use crate::scheduler::{self, gc_work::*, GCWork, GCWorkScheduler, GCWorker, WorkBucketStage};
 use crate::util::address::Address;
 use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::heap::externalpageresource::{ExternalPageResource, ExternalPages};
@@ -24,7 +24,8 @@ use crate::MMTK;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
-use std::sync::Mutex;
+use std::sync::Arc;
+// use std::sync::Mutex;
 
 /// A special space for VM/Runtime managed memory. The implementation is similar to [`crate::policy::immortalspace::ImmortalSpace`],
 /// except that VM space does not allocate. Instead, the runtime can add regions that are externally managed
@@ -36,7 +37,10 @@ pub struct VMSpace<VM: VMBinding> {
     common: CommonSpace<VM>,
     pr: ExternalPageResource<VM>,
     // pub(crate) slots: Mutex<Vec<VM::VMSlot>>,
-    pub(crate) objects: Mutex<Vec<ObjectReference>>,
+    // pub(crate) objects: Mutex<Vec<ObjectReference>>,
+    scheduler: Arc<GCWorkScheduler<VM>>,
+    start: Address,
+    size: usize,
     // #[cfg(debug_assertions)]
     // pub(crate) slots_set: Mutex<HashSet<VM::VMSlot>>,
 }
@@ -49,7 +53,8 @@ impl<VM: VMBinding> SFT for VMSpace<VM> {
         true
     }
     fn is_reachable(&self, object: ObjectReference) -> bool {
-        self.mark_state.is_marked::<VM>(object)
+        // self.mark_state.is_marked::<VM>(object)
+        true
     }
     #[cfg(feature = "object_pinning")]
     fn pin_object(&self, _object: ObjectReference) -> bool {
@@ -157,7 +162,10 @@ impl<VM: VMBinding> Space<VM> for VMSpace<VM> {
         // The default implementation checks with vm map. But vm map has some assumptions about
         // the address range for spaces and the VM space may break those assumptions (as the space is
         // mmapped by the runtime rather than us). So we we use SFT here.
-        SFT_MAP.get_checked(start).name() == self.name()
+        self.start <= start && start < self.start + self.size
+        // unsafe { SFT_MAP.get_checked_nonatomic(start).name() == self.name() }
+        // SFT_MAP.get_checked(start).name() == self.name()
+        // self.pr.get_external_pages().iter().any(|ep| ep.start <= start && start < ep.end)
     }
 
     fn enumerate_objects(&self, enumerator: &mut dyn ObjectEnumerator) {
@@ -189,6 +197,7 @@ impl<VM: VMBinding> VMSpace<VM> {
     pub fn new(args: crate::policy::space::PlanCreateSpaceArgs<VM>) -> Self {
         let (vm_space_start, vm_space_size) =
             (*args.options.vm_space_start, *args.options.vm_space_size);
+        let scheduler = args.scheduler.clone();
         let space = Self {
             initialized: false,
             mark_state: MarkState::new(),
@@ -201,9 +210,12 @@ impl<VM: VMBinding> VMSpace<VM> {
                 ]),
             )),
             // slots: Mutex::new(vec![]),
-            objects: Mutex::new(vec![]),
+            // objects: Mutex::new(vec![]),
+            scheduler,
             // #[cfg(debug_assertions)]
             // slots_set: Mutex::new(HashSet::new()),
+            start: vm_space_start,
+            size: vm_space_size,
         };
 
         if !vm_space_start.is_zero() {
@@ -216,6 +228,12 @@ impl<VM: VMBinding> VMSpace<VM> {
 
     pub fn set_vm_region(&mut self, start: Address, size: usize) {
         self.set_vm_region_inner(start, size, true);
+        self.start = start;
+        self.size = size;
+    }
+
+    pub fn scheduler(&self) -> &GCWorkScheduler<VM> {
+        &self.scheduler
     }
 
     fn set_vm_region_inner(&self, start: Address, size: usize, set_sft: bool) {
@@ -273,142 +291,123 @@ impl<VM: VMBinding> VMSpace<VM> {
         }
     }
 
-    pub fn prepare(&mut self, major_gc: bool) {
-        if unlikely(!self.initialized) {
-            self.mark_state.on_global_prepare::<VM>();
-            if major_gc {
-                for external_pages in self.pr.get_external_pages().iter() {
-                    self.mark_state.on_block_reset::<VM>(
-                        external_pages.start,
-                        external_pages.end - external_pages.start,
-                    );
-                }
-            }
-        }
-    }
+    pub fn prepare(&mut self, _major_gc: bool) {}
 
-    pub fn release(&mut self) {
-        if unlikely(!self.initialized) {
-            self.mark_state.on_global_release::<VM>();
-            // if self.slots.lock().unwrap().len() > 0 {
-            //     self.initialized = true;
-            // } else if self.objects.lock().unwrap().len() > 0 {
-            if self.objects.lock().unwrap().len() > 0 {
-                self.initialized = true;
-            }
-        }
-    }
+    pub fn release(&mut self) {}
 
     pub fn trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,
         object: ObjectReference,
     ) -> ObjectReference {
-        if unlikely(!self.initialized) {
-            #[cfg(feature = "vo_bit")]
-            debug_assert!(
-                crate::util::metadata::vo_bit::is_vo_bit_set::<VM>(object),
-                "{:x}: VO bit not set",
-                object
-            );
-            debug_assert!(self.in_space(object));
-            if self.mark_state.test_and_mark::<VM>(object) {
-                if self.common.needs_log_bit {
-                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                        .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
-                }
-                queue.enqueue(object);
-                self.objects.lock().unwrap().push(object);
-            }
+        #[cfg(feature = "vo_bit")]
+        debug_assert!(
+            crate::util::metadata::vo_bit::is_vo_bit_set::<VM>(object),
+            "{:x}: VO bit not set",
             object
-        } else {
-            object
-        }
+        );
+        debug_assert!(self.in_space(object));
+        // TODO(kunals): Fix this because it's most likely broken for generational GC
+        // if self.mark_state.test_and_mark::<VM>(object) {
+        //     if self.common.needs_log_bit {
+        //         VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
+        //             .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+        //     }
+        // }
+        object
     }
 }
 
-pub struct ProcessVmSpaceSlots<E: ProcessEdgesWork> {
-    vmspace: &'static VMSpace<E::VM>,
+pub struct ProcessVmSpaceObjects<E: ProcessEdgesWork> {
     phantom: PhantomData<E>,
 }
 
-impl<E: ProcessEdgesWork> ProcessVmSpaceSlots<E> {
-    pub fn new(vmspace: &'static VMSpace<E::VM>) -> Self {
+impl<E: ProcessEdgesWork> ProcessVmSpaceObjects<E> {
+    pub fn new() -> Self {
         Self {
-            vmspace,
             phantom: PhantomData,
         }
     }
 }
 
-impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessVmSpaceSlots<E> {
+impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessVmSpaceObjects<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
-        if likely(self.vmspace.initialized) {
-            // use crate::vm::slot::Slot;
-            // use crate::vm::Scanning;
+        use crate::vm::Scanning;
 
-            let objects = self.vmspace.objects.lock().unwrap();
-            // let slots = self.vmspace.slots.lock().unwrap();
+        let tls = worker.tls;
+        let mut closure = |objects: Vec<ObjectReference>| {
+            let mut work_packet = ScanObjects::<E>::new(objects, false, WorkBucketStage::Closure);
+            worker.add_work(WorkBucketStage::Closure, work_packet);
+        };
 
-            // println!("Processing {} VM space objects", objects.len());
-            // println!("Processing {} VM space slots", slots.len());
+        <E::VM as VMBinding>::VMScanning::scan_vm_space_objects(tls, closure);
 
-            // let mut object_slots = vec![];
-            // let mut outside_vmspace_object_slots = HashSet::new();
-            // for object in objects.iter() {
-            //     let slots = <E::VM as VMBinding>::VMScanning::scan_object(
-            //         worker.tls,
-            //         *object,
-            //         &mut |slot: <E::VM as VMBinding>::VMSlot| {
-            //             object_slots.push(slot);
-            //             if !self.vmspace.address_in_space(slot.as_address()) {
-            //                 outside_vmspace_object_slots.insert(*object);
-            //             }
-            //         },
-            //     );
-            // }
+        // if likely(self.vmspace.initialized) {
+        //     // use crate::vm::slot::Slot;
+        //     // use crate::vm::Scanning;
 
-            // println!("Processing {} VM space object slots", object_slots.len());
-            // println!(
-            //     "{} VM space object with slots outside VM space",
-            //     outside_vmspace_object_slots.len()
-            // );
+        //     let objects = self.vmspace.objects.lock().unwrap();
+        //     // let slots = self.vmspace.slots.lock().unwrap();
 
-            // let slot_set: HashSet<<E::VM as VMBinding>::VMSlot> =
-            //     HashSet::from_iter(slots.iter().cloned());
-            // let object_slots_set = HashSet::from_iter(object_slots.iter().cloned());
+        //     // println!("Processing {} VM space objects", objects.len());
+        //     // println!("Processing {} VM space slots", slots.len());
 
-            // let mut diff = object_slots_set.difference(&slot_set).collect::<Vec<_>>();
-            // diff.sort();
+        //     // let mut object_slots = vec![];
+        //     // let mut outside_vmspace_object_slots = HashSet::new();
+        //     // for object in objects.iter() {
+        //     //     let slots = <E::VM as VMBinding>::VMScanning::scan_object(
+        //     //         worker.tls,
+        //     //         *object,
+        //     //         &mut |slot: <E::VM as VMBinding>::VMSlot| {
+        //     //             object_slots.push(slot);
+        //     //             if !self.vmspace.address_in_space(slot.as_address()) {
+        //     //                 outside_vmspace_object_slots.insert(*object);
+        //     //             }
+        //     //         },
+        //     //     );
+        //     // }
 
-            // for object in outside_vmspace_object_slots.iter().take(5) {
-            //     <E::VM as VMBinding>::VMObjectModel::dump_object(*object);
-            // }
+        //     // println!("Processing {} VM space object slots", object_slots.len());
+        //     // println!(
+        //     //     "{} VM space object with slots outside VM space",
+        //     //     outside_vmspace_object_slots.len()
+        //     // );
 
-            // println!("{} difference slots", diff.len());
-            // println!("Difference: {:?}", diff);
+        //     // let slot_set: HashSet<<E::VM as VMBinding>::VMSlot> =
+        //     //     HashSet::from_iter(slots.iter().cloned());
+        //     // let object_slots_set = HashSet::from_iter(object_slots.iter().cloned());
 
-            // iterate through the first five elements of the difference
-            // for slot in diff.iter().take(5) {
-            //     let Some(object) = slot.load() else { continue };
-            //     <E::VM as VMBinding>::VMObjectModel::dump_object(object);
-            // }
+        //     // let mut diff = object_slots_set.difference(&slot_set).collect::<Vec<_>>();
+        //     // diff.sort();
 
-            // assert_eq!(object_slots.len(), slots.len());
+        //     // for object in outside_vmspace_object_slots.iter().take(5) {
+        //     //     <E::VM as VMBinding>::VMObjectModel::dump_object(*object);
+        //     // }
 
-            GCWork::do_work(
-                &mut ScanObjects::<E>::new(objects.clone(), false, WorkBucketStage::Closure),
-                worker,
-                mmtk,
-            )
+        //     // println!("{} difference slots", diff.len());
+        //     // println!("Difference: {:?}", diff);
 
-            // let slots = self.vmspace.slots.lock().unwrap();
-            // println!("Processing {} VM space slots", slots.len());
-            // GCWork::do_work(
-            //     &mut E::new(slots.clone(), false, mmtk, WorkBucketStage::Closure),
-            //     worker,
-            //     mmtk,
-            // )
-        }
+        //     // iterate through the first five elements of the difference
+        //     // for slot in diff.iter().take(5) {
+        //     //     let Some(object) = slot.load() else { continue };
+        //     //     <E::VM as VMBinding>::VMObjectModel::dump_object(object);
+        //     // }
+
+        //     // assert_eq!(object_slots.len(), slots.len());
+
+        //     GCWork::do_work(
+        //         &mut ScanObjects::<E>::new(objects.clone(), false, WorkBucketStage::Closure),
+        //         worker,
+        //         mmtk,
+        //     )
+
+        //     // let slots = self.vmspace.slots.lock().unwrap();
+        //     // println!("Processing {} VM space slots", slots.len());
+        //     // GCWork::do_work(
+        //     //     &mut E::new(slots.clone(), false, mmtk, WorkBucketStage::Closure),
+        //     //     worker,
+        //     //     mmtk,
+        //     // )
+        // }
     }
 }
