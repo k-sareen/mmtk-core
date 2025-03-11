@@ -31,6 +31,10 @@ pub trait SFTMap {
     /// mostly used inside MMTk, and in most cases, we know that they are within our space address range.
     fn get_checked(&self, address: Address) -> &dyn SFT;
 
+    unsafe fn get_checked_nonatomic(&self, address: Address) -> &dyn SFT {
+        &EMPTY_SPACE_SFT
+    }
+
     /// Set SFT for the address range. The address must have a valid SFT entry in the table.
     ///
     /// # Safety
@@ -146,6 +150,12 @@ impl SFTRefStorage {
     pub fn store(&self, sft: SFTRawPointer) {
         let val: DoubleWord = unsafe { std::mem::transmute(sft) };
         self.0.store(val, Ordering::Release)
+    }
+
+    // Load with the relaxed ordering.
+    pub fn load_nonatomic(&self) -> &dyn SFT {
+        let val = self.0.load(Ordering::Relaxed);
+        unsafe { std::mem::transmute(val) }
     }
 }
 
@@ -474,6 +484,15 @@ mod sparse_chunk_map {
         unsafe fn get_unchecked(&self, address: Address) -> &dyn SFT {
             let cell = self.sft.get_unchecked(address.chunk_index());
             cell.load()
+        }
+
+        unsafe fn get_checked_nonatomic(&self, address: Address) -> &dyn SFT {
+            if self.has_sft_entry(address) {
+                let cell = self.sft.get_unchecked(address.chunk_index());
+                cell.load_nonatomic()
+            } else {
+                &EMPTY_SPACE_SFT
+            }
         }
 
         /// Update SFT map for the given address range.

@@ -81,7 +81,6 @@ pub trait VMMap: Sync {
 
     fn is_finalized(&self) -> bool;
 
-    #[inline(always)]
     fn get_descriptor_for_address(&self, address: Address) -> SpaceDescriptor;
 
     fn add_to_cumulative_committed_pages(&self, pages: usize);
