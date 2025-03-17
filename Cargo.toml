@@ -117,6 +117,9 @@ code_space  = []
 # Use with care.
 exec_permission_on_all_spaces = []
 
+# Edge enqueuing only
+edge_enqueuing = []
+
 # Global valid object (VO) bit metadata.
 # The VO bit is set when an object is allocated, and cleared when the GC determines it is dead.
 # See `src/util/metadata/vo_bit/mod.rs`
