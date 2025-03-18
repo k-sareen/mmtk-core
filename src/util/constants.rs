@@ -23,6 +23,9 @@ pub const LOG_BYTES_IN_KBYTE: u8 = 10;
 pub const BYTES_IN_KBYTE: usize = 1 << LOG_BYTES_IN_KBYTE;
 
 /// Work packet buffer size
+#[cfg(feature = "edge_enqueuing")]
+pub const BUFFER_SIZE: usize = 1024;
+#[cfg(not(feature = "edge_enqueuing"))]
 pub const BUFFER_SIZE: usize = 4096;
 
 /// Some card scanning constants ported from Java MMTK.
