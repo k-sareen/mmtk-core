@@ -63,6 +63,10 @@ pub trait SFTMap {
     /// The address must have a valid SFT entry in the map. Usually we know this if the address is from an object reference, or from our space address range.
     /// Otherwise, the caller should check with `has_sft_entry()` before calling this method.
     unsafe fn clear(&self, address: Address);
+
+    fn get_space_idx(&self, _name: &str) -> u8 {
+        0
+    }
 }
 
 pub(crate) fn create_sft_map() -> Box<dyn SFTMap> {
@@ -73,6 +77,7 @@ pub(crate) fn create_sft_map() -> Box<dyn SFTMap> {
             use crate::util::heap::layout::vm_layout::vm_layout;
             if !vm_layout().force_use_contiguous_spaces {
                 // This is usually the case for compressed pointer. Use the 32bits implementation.
+                // Box::new(dense_chunk_map::SFTDenseChunkMap::new())
                 Box::new(sparse_chunk_map::SFTSparseChunkMap::new())
             } else if cfg!(any(feature = "malloc_mark_sweep", feature = "vm_space")) {
                 // We have off-heap memory (malloc'd objects, or VM space). We have to use a chunk-based map.
@@ -309,7 +314,7 @@ mod dense_chunk_map {
     use crate::util::metadata::side_metadata::spec_defs::SFT_DENSE_CHUNK_MAP_INDEX;
     use crate::util::metadata::side_metadata::*;
     use std::collections::HashMap;
-    use std::sync::atomic::Ordering;
+    // use std::sync::atomic::Ordering;
 
     /// SFTDenseChunkMap is a small table. It has one entry for each space in the table, and use
     /// side metadata to record the index for each chunk. This works for both 32 bits and 64 bits.
@@ -408,18 +413,21 @@ mod dense_chunk_map {
             );
             while chunk < last_chunk {
                 trace!("Update {} to index {}", chunk, index);
-                SFT_DENSE_CHUNK_MAP_INDEX.store_atomic::<u8>(chunk, index, Ordering::SeqCst);
+                SFT_DENSE_CHUNK_MAP_INDEX.store::<u8>(chunk, index);
                 chunk += BYTES_IN_CHUNK;
             }
             debug!("update done");
         }
 
         unsafe fn clear(&self, address: Address) {
-            SFT_DENSE_CHUNK_MAP_INDEX.store_atomic::<u8>(
+            SFT_DENSE_CHUNK_MAP_INDEX.store::<u8>(
                 address,
                 Self::EMPTY_SFT_INDEX,
-                Ordering::SeqCst,
             );
+        }
+
+        fn get_space_idx(&self, name: &str) -> u8 {
+            *self.index_map.get(name).unwrap() as u8
         }
     }
 
@@ -436,7 +444,7 @@ mod dense_chunk_map {
         }
 
         pub fn addr_to_index(addr: Address) -> u8 {
-            SFT_DENSE_CHUNK_MAP_INDEX.load_atomic::<u8>(addr, Ordering::Relaxed)
+            unsafe { SFT_DENSE_CHUNK_MAP_INDEX.load::<u8>(addr) }
         }
     }
 }
@@ -448,10 +456,15 @@ mod sparse_chunk_map {
     use crate::util::conversions::*;
     use crate::util::heap::layout::vm_layout::vm_layout;
     use crate::util::heap::layout::vm_layout::BYTES_IN_CHUNK;
+    use crate::util::metadata::side_metadata::spec_defs::SFT_DENSE_CHUNK_MAP_INDEX;
+    use crate::util::metadata::side_metadata::*;
+    use std::collections::HashMap;
 
     /// The chunk map is a sparse table. It has one entry for each chunk in the address space we may use.
     pub struct SFTSparseChunkMap {
         sft: Vec<SFTRefStorage>,
+        num_spaces: u8,
+        index_map: HashMap<String, u8>,
     }
 
     unsafe impl Sync for SFTSparseChunkMap {}
@@ -462,7 +475,30 @@ mod sparse_chunk_map {
         }
 
         fn get_side_metadata(&self) -> Option<&SideMetadataSpec> {
-            None
+            Some(&crate::util::metadata::side_metadata::spec_defs::SFT_DENSE_CHUNK_MAP_INDEX)
+        }
+
+        fn notify_space_creation(&mut self, space: SFTRawPointer) {
+            self.num_spaces += 1;
+            let space_name = unsafe { &*space }.name().to_string();
+            // We shouldn't have this space in our map yet. Otherwise, this method is called multiple times for the same space.
+            debug_assert!(!self.index_map.contains_key(&space_name));
+            // Insert to hashmap and vec
+            self.index_map.insert(space_name, self.num_spaces);
+        }
+
+        unsafe fn eager_initialize(&mut self, space: SFTRawPointer, start: Address, bytes: usize) {
+            let context = SideMetadataContext {
+                global: vec![SFT_DENSE_CHUNK_MAP_INDEX],
+                local: vec![],
+            };
+            context
+                .try_map_metadata_space(start, bytes, "SFTChunkMap")
+                .unwrap_or_else(|e| {
+                    panic!("failed to mmap metadata memory: {e}");
+                });
+
+            self.update(space, start, bytes);
         }
 
         fn get_checked(&self, address: Address) -> &dyn SFT {
@@ -492,8 +528,11 @@ mod sparse_chunk_map {
             }
             let first = start.chunk_index();
             let last = conversions::chunk_align_up(start + bytes).chunk_index();
+            let idx = *self.index_map.get((*space).name()).unwrap();
             for chunk in first..last {
                 self.set(chunk, &*space);
+                let chunk_addr = conversions::chunk_index_to_address(chunk);
+                SFT_DENSE_CHUNK_MAP_INDEX.store::<u8>(chunk_addr, idx);
             }
             if DEBUG_SFT {
                 self.trace_sft_map();
@@ -501,7 +540,6 @@ mod sparse_chunk_map {
         }
 
         // TODO: We should clear a SFT entry when a space releases a chunk.
-        #[allow(dead_code)]
         unsafe fn clear(&self, chunk_start: Address) {
             if DEBUG_SFT {
                 debug!(
@@ -513,15 +551,25 @@ mod sparse_chunk_map {
             assert!(chunk_start.is_aligned_to(BYTES_IN_CHUNK));
             let chunk_idx = chunk_start.chunk_index();
             self.set(chunk_idx, &EMPTY_SPACE_SFT);
+            SFT_DENSE_CHUNK_MAP_INDEX.store::<u8>(chunk_start, Self::EMPTY_SFT_INDEX);
+        }
+
+        fn get_space_idx(&self, name: &str) -> u8 {
+            *self.index_map.get(name).unwrap()
         }
     }
 
     impl SFTSparseChunkMap {
+        /// Empty space is at index 0
+        const EMPTY_SFT_INDEX: u8 = 0;
+
         pub fn new() -> Self {
             SFTSparseChunkMap {
                 sft: std::iter::repeat_with(SFTRefStorage::default)
                     .take(vm_layout().max_chunks())
                     .collect(),
+                num_spaces: 0,
+                index_map: HashMap::new(),
             }
         }
 
