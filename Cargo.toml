@@ -119,6 +119,8 @@ exec_permission_on_all_spaces = []
 
 # Edge enqueuing only
 edge_enqueuing = []
+# Specialize work packet queues
+specialization = []
 
 # Global valid object (VO) bit metadata.
 # The VO bit is set when an object is allocated, and cleared when the GC determines it is dead.

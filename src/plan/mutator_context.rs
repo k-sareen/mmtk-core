@@ -402,17 +402,23 @@ pub(crate) fn create_allocator_mapping(
     // spaces in common plan
 
     if include_common_plan {
-        map[AllocationSemantics::Immortal] =
-            AllocatorSelector::BumpPointer(reserved.n_bump_pointer);
-        reserved.n_bump_pointer += 1;
+        #[cfg(not(feature = "specialization"))]
+        {
+            map[AllocationSemantics::Immortal] =
+                AllocatorSelector::BumpPointer(reserved.n_bump_pointer);
+            reserved.n_bump_pointer += 1;
+        }
 
         map[AllocationSemantics::Los] = AllocatorSelector::LargeObject(reserved.n_large_object);
         reserved.n_large_object += 1;
 
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.
-        map[AllocationSemantics::NonMoving] =
-            AllocatorSelector::BumpPointer(reserved.n_bump_pointer);
-        reserved.n_bump_pointer += 1;
+        #[cfg(not(feature = "specialization"))]
+        {
+            map[AllocationSemantics::NonMoving] =
+                AllocatorSelector::BumpPointer(reserved.n_bump_pointer);
+            reserved.n_bump_pointer += 1;
+        }
     }
 
     reserved.validate();
@@ -464,22 +470,28 @@ pub(crate) fn create_space_mapping<VM: VMBinding>(
     // spaces in CommonPlan
 
     if include_common_plan {
-        vec.push((
-            AllocatorSelector::BumpPointer(reserved.n_bump_pointer),
-            plan.common().get_immortal(),
-        ));
-        reserved.n_bump_pointer += 1;
+        #[cfg(not(feature = "specialization"))]
+        {
+            vec.push((
+                AllocatorSelector::BumpPointer(reserved.n_bump_pointer),
+                plan.common().get_immortal(),
+            ));
+            reserved.n_bump_pointer += 1;
+        }
         vec.push((
             AllocatorSelector::LargeObject(reserved.n_large_object),
             plan.common().get_los(),
         ));
         reserved.n_large_object += 1;
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.
-        vec.push((
-            AllocatorSelector::BumpPointer(reserved.n_bump_pointer),
-            plan.common().get_nonmoving(),
-        ));
-        reserved.n_bump_pointer += 1;
+        #[cfg(not(feature = "specialization"))]
+        {
+            vec.push((
+                AllocatorSelector::BumpPointer(reserved.n_bump_pointer),
+                plan.common().get_nonmoving(),
+            ));
+            reserved.n_bump_pointer += 1;
+        }
     }
 
     reserved.validate();

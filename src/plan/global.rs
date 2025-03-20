@@ -5,6 +5,7 @@ use crate::global_state::GlobalState;
 use crate::mmtk::MMTK;
 use crate::plan::tracing::ObjectQueue;
 use crate::plan::Mutator;
+#[cfg(not(feature = "specialization"))]
 use crate::policy::immortalspace::ImmortalSpace;
 use crate::policy::largeobjectspace::LargeObjectSpace;
 use crate::policy::space::{PlanCreateSpaceArgs, Space};
@@ -547,11 +548,13 @@ CommonPlan is for representing state and features used by _many_ plans, but that
 */
 #[derive(HasSpaces, PlanTraceObject)]
 pub struct CommonPlan<VM: VMBinding> {
+    #[cfg(not(feature = "specialization"))]
     #[space]
     pub immortal: ImmortalSpace<VM>,
     #[space]
     pub los: LargeObjectSpace<VM>,
     // TODO: We should use a marksweep space for nonmoving.
+    #[cfg(not(feature = "specialization"))]
     #[space]
     pub nonmoving: ImmortalSpace<VM>,
     #[parent]
@@ -561,6 +564,7 @@ pub struct CommonPlan<VM: VMBinding> {
 impl<VM: VMBinding> CommonPlan<VM> {
     pub fn new(mut args: CreateSpecificPlanArgs<VM>) -> CommonPlan<VM> {
         CommonPlan {
+            #[cfg(not(feature = "specialization"))]
             immortal: ImmortalSpace::new(args.get_space_args(
                 "immortal",
                 true,
@@ -571,6 +575,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 args.get_space_args("los", true, false, VMRequest::discontiguous()),
                 false,
             ),
+            #[cfg(not(feature = "specialization"))]
             nonmoving: ImmortalSpace::new(args.get_space_args(
                 "nonmoving",
                 true,
@@ -582,26 +587,34 @@ impl<VM: VMBinding> CommonPlan<VM> {
     }
 
     pub fn get_used_pages(&self) -> usize {
-        self.immortal.reserved_pages()
-            + self.los.reserved_pages()
-            + self.nonmoving.reserved_pages()
-            + self.base.get_used_pages()
+        #[allow(unused_mut)]
+        let mut pages = self.los.reserved_pages() + self.base.get_used_pages();
+        #[cfg(not(feature = "specialization"))]
+        {
+            pages += self.immortal.reserved_pages() + self.nonmoving.reserved_pages();
+        }
+        pages
     }
 
     pub fn prepare(&mut self, tls: VMWorkerThread, full_heap: bool) {
+        #[cfg(not(feature = "specialization"))]
         self.immortal.prepare();
         self.los.prepare(full_heap);
+        #[cfg(not(feature = "specialization"))]
         self.nonmoving.prepare();
         self.base.prepare(tls, full_heap)
     }
 
     pub fn release(&mut self, tls: VMWorkerThread, full_heap: bool) {
+        #[cfg(not(feature = "specialization"))]
         self.immortal.release();
         self.los.release(full_heap);
+        #[cfg(not(feature = "specialization"))]
         self.nonmoving.release();
         self.base.release(tls, full_heap)
     }
 
+    #[cfg(not(feature = "specialization"))]
     pub fn get_immortal(&self) -> &ImmortalSpace<VM> {
         &self.immortal
     }
@@ -610,6 +623,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         &self.los
     }
 
+    #[cfg(not(feature = "specialization"))]
     pub fn get_nonmoving(&self) -> &ImmortalSpace<VM> {
         &self.nonmoving
     }

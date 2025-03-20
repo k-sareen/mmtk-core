@@ -18,6 +18,7 @@ use crate::vm::{ObjectModel, VMBinding};
 /// policy. Under this policy all that is required is for the
 /// "collector" to propagate marks in a liveness trace.  It does not
 /// actually collect.
+#[allow(dead_code)]
 pub struct ImmortalSpace<VM: VMBinding> {
     mark_state: MarkState,
     common: CommonSpace<VM>,
@@ -177,6 +178,7 @@ impl<VM: VMBinding> ImmortalSpace<VM> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn prepare(&mut self) {
         self.mark_state.on_global_prepare::<VM>();
         if self.vm_space {
@@ -197,6 +199,7 @@ impl<VM: VMBinding> ImmortalSpace<VM> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn release(&mut self) {
         self.mark_state.on_global_release::<VM>();
     }
