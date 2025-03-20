@@ -10,9 +10,11 @@ use crate::plan::global::CreateGeneralPlanArgs;
 use crate::plan::global::CreateSpecificPlanArgs;
 use crate::plan::AllocationSemantics;
 use crate::plan::Plan;
+use crate::plan::PlanTraceObject;
 use crate::plan::PlanConstraints;
 use crate::policy::copyspace::CopySpace;
 use crate::policy::gc_work::TraceKind;
+use crate::policy::sft_map::SFTMap;
 use crate::policy::space::Space;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
@@ -27,23 +29,101 @@ use crate::ObjectQueue;
 use enum_map::EnumMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mmtk_macros::{HasSpaces, PlanTraceObject};
+use mmtk_macros::HasSpaces;
 
-#[derive(HasSpaces, PlanTraceObject)]
+struct TraceObjectEntry<VM: VMBinding> {
+    space_ptr: u128,
+    copy_semantics: Option<CopySemantics>,
+    phantom: std::marker::PhantomData<VM>,
+}
+
+impl<VM: VMBinding> TraceObjectEntry<VM> {
+    fn new(space: &dyn Space<VM>, semantics: Option<CopySemantics>) -> Self {
+        let space_ptr: u128 = unsafe { std::mem::transmute(space) };
+        Self { space_ptr, copy_semantics: semantics, phantom: std::marker::PhantomData }
+    }
+
+    pub(crate) fn get_space(&self) -> &dyn Space<VM> {
+        unsafe { std::mem::transmute(self.space_ptr) }
+    }
+
+    pub(crate) fn trace_object<Q: ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+        worker: &mut GCWorker<VM>,
+    ) -> ObjectReference {
+        self.get_space().trace_object::<Q, KIND>(queue, object, self.copy_semantics, worker)
+    }
+}
+
+#[derive(HasSpaces)]
 pub struct GenCopy<VM: VMBinding> {
-    #[parent]
     pub gen: CommonGenPlan<VM>,
     pub hi: AtomicBool,
-    #[space]
-    #[copy_semantics(CopySemantics::Mature)]
     pub copyspace0: CopySpace<VM>,
-    #[space]
-    #[copy_semantics(CopySemantics::Mature)]
     pub copyspace1: CopySpace<VM>,
+    // pub trace_object_tbl: Vec<(usize, usize)>,
+    // pub trace_object_tbl: Vec<u128>,
+    // pub trace_object_args_tbl: Vec<Option<CopySemantics>>,
+    pub trace_object_tbl: Vec<TraceObjectEntry<VM>>,
 }
 
 /// The plan constraints for the generational copying plan.
 pub const GENCOPY_CONSTRAINTS: PlanConstraints = crate::plan::generational::GEN_CONSTRAINTS;
+
+impl<VM: VMBinding> PlanTraceObject<VM> for GenCopy<VM> {
+    fn trace_object<Q: ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+        worker: &mut GCWorker<VM>,
+    ) -> ObjectReference {
+        use crate::util::metadata::side_metadata::spec_defs::SFT_DENSE_CHUNK_MAP_INDEX;
+
+        let chunk = crate::util::conversions::chunk_align_down(object.to_raw_address());
+        let idx = unsafe { SFT_DENSE_CHUNK_MAP_INDEX.load::<u8>(chunk) } as usize;
+
+        debug_assert_ne!(idx, 0, "Chunk index can't be 0 for address {}!", object);
+        debug_assert!(idx as usize <= self.trace_object_tbl.len(), "Chunk index {} does not exist in trace_object_tbl", idx);
+
+        // let space = self.trace_object_tbl[idx];
+        // let copy_semantics = self.trace_object_args_tbl[idx];
+
+        // let trace_object_fn: fn(&dyn Space<VM>, &mut Q, ObjectReference, Option<CopySemantics>, &mut GCWorker<VM>) = unsafe {
+        //     std::mem::transmute(space.0)
+        // };
+        // let space_ptr: &dyn Space<VM> = unsafe { std::mem::transmute(space.1) };
+        // trace_object_fn(space_ptr, queue, object, copy_semantics, worker);
+
+        // let space_ptr: &dyn Space<VM> = unsafe { std::mem::transmute(space) };
+        // space_ptr.trace_object::<Q, KIND>(queue, object, copy_semantics, worker)
+        // use crate::policy::gc_work::PolicyTraceObject;
+        // let policy_trace_ptr: &dyn PolicyTraceObject<VM> = unsafe { std::mem::transmute(space) };
+        // policy_trace_ptr.trace_object::<Q, KIND>(queue, object, copy_semantics, worker);
+
+        let entry = &self.trace_object_tbl[idx];
+        entry.trace_object::<Q, KIND>(queue, object, worker)
+
+        // use crate :: policy :: space :: Space;
+        // use crate :: policy :: gc_work :: PolicyTraceObject;
+        // use crate :: plan :: PlanTraceObject;
+        // if self.copyspace0.in_space(object) {
+        //     return <CopySpace<VM> as PolicyTraceObject <VM>>::trace_object::<Q, KIND>(&self.copyspace0, queue, object, Some(CopySemantics::Mature), worker);
+        // }
+        // if self.copyspace1.in_space(object) {
+        //     return <CopySpace<VM> as PolicyTraceObject<VM>>::trace_object::<Q, KIND>(&self.copyspace1, queue, object, Some(CopySemantics::Mature), worker);
+        // }
+        // <CommonGenPlan<VM> as PlanTraceObject<VM>>::trace_object::<Q, KIND>(&self.gen, queue, object, worker)
+    }
+
+    fn post_scan_object(&self, _object: ObjectReference) {}
+
+    fn may_move_objects<const KIND: TraceKind>() -> bool {
+        true
+    }
+}
+
 
 impl<VM: VMBinding> Plan for GenCopy<VM> {
     fn constraints(&self) -> &'static PlanConstraints {
@@ -155,6 +235,37 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
     fn generational(&self) -> Option<&dyn GenerationalPlan<VM = Self::VM>> {
         Some(self)
     }
+
+    fn populate_trace_object_tbl(&mut self, sft_map: &mut dyn SFTMap) {
+        use crate::plan::global::HasSpaces;
+
+        let mut trace_obj_tbl = vec![];
+        // let trace_obj_args_tbl = &mut self.trace_object_args_tbl;
+        let closure = &mut |space: &mut dyn Space<VM>| {
+            let name = space.name();
+            let idx = sft_map.get_space_idx(name);
+
+            assert!(idx as usize == trace_obj_tbl.len());
+            let copy_semantics = if name == "copyspace0" || name == "copyspace1" {
+                Some(CopySemantics::Mature)
+            } else if name == "nursery" {
+                Some(CopySemantics::PromoteToMature)
+            } else {
+                None
+            };
+
+            let entry = TraceObjectEntry::new(space, copy_semantics);
+            trace_obj_tbl.push(entry);
+
+            // let space_ptr: u128 = unsafe { std::mem::transmute(space) };
+            // trace_obj_tbl.push(space_ptr);
+            // trace_obj_args_tbl.push(copy_semantics);
+        };
+        self.for_each_space_mut(closure);
+        for entry in trace_obj_tbl {
+            self.trace_object_tbl.push(entry);
+        }
+    }
 }
 
 impl<VM: VMBinding> GenerationalPlan for GenCopy<VM> {
@@ -222,6 +333,11 @@ impl<VM: VMBinding> GenCopy<VM> {
             hi: AtomicBool::new(false),
             copyspace0,
             copyspace1,
+            trace_object_tbl: vec![TraceObjectEntry::new(
+                unsafe { std::mem::transmute(0_u128) },
+                None,
+            )],
+            // trace_object_args_tbl: vec![None]
         };
 
         res.verify_side_metadata_sanity();

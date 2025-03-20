@@ -7,6 +7,7 @@ use crate::plan::tracing::ObjectQueue;
 use crate::plan::Mutator;
 use crate::policy::immortalspace::ImmortalSpace;
 use crate::policy::largeobjectspace::LargeObjectSpace;
+use crate::policy::sft_map::SFTMap;
 use crate::policy::space::{PlanCreateSpaceArgs, Space};
 #[cfg(feature = "vm_space")]
 use crate::policy::vmspace::VMSpace;
@@ -65,7 +66,7 @@ pub fn create_plan<VM: VMBinding>(
     plan: PlanSelector,
     args: CreateGeneralPlanArgs<VM>,
 ) -> Box<dyn Plan<VM = VM>> {
-    let plan = match plan {
+    let mut plan = match plan {
         PlanSelector::NoGC => {
             Box::new(crate::plan::nogc::NoGC::new(args)) as Box<dyn Plan<VM = VM>>
         }
@@ -101,6 +102,8 @@ pub fn create_plan<VM: VMBinding>(
         sft_map.notify_space_creation(s.as_sft());
         s.initialize_sft(sft_map);
     });
+
+    plan.populate_trace_object_tbl(sft_map);
 
     plan
 }
@@ -331,6 +334,8 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
             space.verify_side_metadata_sanity(&mut side_metadata_sanity_checker);
         })
     }
+
+    fn populate_trace_object_tbl(&mut self, _sft_map: &mut dyn SFTMap) {}
 }
 
 impl_downcast!(Plan assoc VM);
