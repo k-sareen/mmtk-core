@@ -524,7 +524,8 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for SoftRefProcessing<E> {
 
             // Retain soft references.  This will expand the transitive closure.  We create an
             // instance of `E` for this.
-            let mut w = E::new(vec![], false, mmtk, WorkBucketStage::SoftRefClosure);
+            // TODO(kunals): Figure out the correct index for this
+            let mut w = E::new(vec![], 0, false, mmtk, WorkBucketStage::SoftRefClosure);
             w.set_worker(worker);
             mmtk.reference_processors.retain_soft_refs(&mut w, mmtk);
             w.flush();
@@ -570,7 +571,8 @@ impl<VM: VMBinding> PhantomRefProcessing<VM> {
 pub(crate) struct RefForwarding<E: ProcessEdgesWork>(PhantomData<E>);
 impl<E: ProcessEdgesWork> GCWork<E::VM> for RefForwarding<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
-        let mut w = E::new(vec![], false, mmtk, WorkBucketStage::RefForwarding);
+        // TODO(kunals): Figure out the correct index for this
+        let mut w = E::new(vec![], 0, false, mmtk, WorkBucketStage::RefForwarding);
         w.set_worker(worker);
         mmtk.reference_processors.forward_refs(&mut w, mmtk);
         w.flush();

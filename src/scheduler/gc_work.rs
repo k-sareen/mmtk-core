@@ -3,6 +3,7 @@ use super::*;
 use crate::global_state::GcStatus;
 use crate::plan::ObjectsClosure;
 use crate::plan::VectorObjectQueue;
+use crate::util::metadata::side_metadata::spec_defs::SFT_DENSE_CHUNK_MAP_INDEX;
 use crate::util::*;
 use crate::vm::slot::Slot;
 use crate::vm::*;
@@ -294,7 +295,8 @@ impl<E: ProcessEdgesWork> ObjectTracerContext<E::VM> for ProcessEdgesWorkTracerC
         let mmtk = worker.mmtk;
 
         // Prepare the underlying ProcessEdgesWork
-        let mut process_edges_work = E::new(vec![], false, mmtk, self.stage);
+        // TODO(kunals): Figure out the correct index for this
+        let mut process_edges_work = E::new(vec![], 0, false, mmtk, self.stage);
         // FIXME: This line allows us to omit the borrowing lifetime of worker.
         // We should refactor ProcessEdgesWork so that it uses `worker` locally, not as a member.
         process_edges_work.set_worker(worker);
@@ -459,14 +461,15 @@ impl<C: GCWorkContext> GCWork<C::VM> for ScanVMSpecificRoots<C> {
 }
 
 pub struct ProcessEdgesBase<VM: VMBinding> {
-    pub slots: Vec<VM::VMSlot>,
+    pub slots: [Vec<VM::VMSlot>; 4],
+    pub index: u8,
     pub nodes: VectorObjectQueue,
     mmtk: &'static MMTK<VM>,
     // Use raw pointer for fast pointer dereferencing, instead of using `Option<&'static mut GCWorker<E::VM>>`.
     // Because a copying gc will dereference this pointer at least once for every object copy.
     worker: *mut GCWorker<VM>,
     pub roots: bool,
-    pub pushes: u32,
+    pub pushes: [u32; 4],
     pub bucket: WorkBucketStage,
 }
 
@@ -477,6 +480,7 @@ impl<VM: VMBinding> ProcessEdgesBase<VM> {
     // at creation. This avoids overhead for dynamic dispatch or downcasting plan for each object traced.
     pub fn new(
         slots: Vec<VM::VMSlot>,
+        index: usize,
         roots: bool,
         mmtk: &'static MMTK<VM>,
         bucket: WorkBucketStage,
@@ -488,13 +492,20 @@ impl<VM: VMBinding> ProcessEdgesBase<VM> {
                 mmtk.slot_logger.log_slot(*slot);
             }
         }
+        let _slots = slots;
+        let slots = {
+            let mut slots = [vec![], vec![], vec![], vec![]];
+            slots[index].extend(_slots);
+            slots
+        };
         Self {
             slots,
+            index: index as u8,
             nodes: VectorObjectQueue::new(),
             mmtk,
             worker: std::ptr::null_mut(),
             roots,
-            pushes: 0,
+            pushes: [0, 0, 0, 0],
             bucket,
         }
     }
@@ -516,7 +527,11 @@ impl<VM: VMBinding> ProcessEdgesBase<VM> {
 
     /// Pop all nodes from nodes, and clear nodes to an empty vector.
     pub fn pop_nodes(&mut self) -> Vec<ObjectReference> {
-        self.nodes.take()
+        if cfg!(not(feature = "edge_enqueuing")) {
+            self.nodes.take()
+        } else {
+            unreachable!()
+        }
     }
 
     pub fn is_roots(&self) -> bool {
@@ -580,6 +595,7 @@ pub trait ProcessEdgesWork:
     /// * `bucket`: which work bucket this packet belongs to. Further work generated from this packet will also be put to the same bucket.
     fn new(
         slots: Vec<SlotOf<Self>>,
+        index: usize,
         roots: bool,
         mmtk: &'static MMTK<Self::VM>,
         bucket: WorkBucketStage,
@@ -650,9 +666,9 @@ pub trait ProcessEdgesWork:
     /// Process all the slots in the work packet.
     fn process_slots(&mut self) {
         probe!(mmtk, process_slots, self.slots.len(), self.is_roots());
-        for i in 0..self.slots.len() {
-            self.process_slot(self.slots[i])
-        }
+        // for i in 0..self.slots.len() {
+        //     self.process_slot(self.slots[i])
+        // }
     }
 }
 
@@ -690,11 +706,12 @@ impl<VM: VMBinding> ProcessEdgesWork for SFTProcessEdges<VM> {
 
     fn new(
         slots: Vec<SlotOf<Self>>,
+        index: usize,
         roots: bool,
         mmtk: &'static MMTK<VM>,
         bucket: WorkBucketStage,
     ) -> Self {
-        let base = ProcessEdgesBase::new(slots, roots, mmtk, bucket);
+        let base = ProcessEdgesBase::new(slots, index, roots, mmtk, bucket);
         Self { base }
     }
 
@@ -766,7 +783,8 @@ impl<VM: VMBinding, DPE: ProcessEdgesWork<VM = VM>, PPE: ProcessEdgesWork<VM = V
         crate::memory_manager::add_work_packet(
             self.mmtk,
             WorkBucketStage::Closure,
-            DPE::new(slots, true, self.mmtk, WorkBucketStage::Closure),
+            // TODO(kunals): Figure out the correct index for this
+            DPE::new(slots, 0, true, self.mmtk, WorkBucketStage::Closure),
         );
     }
 
@@ -971,11 +989,12 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
 
     fn new(
         slots: Vec<SlotOf<Self>>,
+        index: usize,
         roots: bool,
         mmtk: &'static MMTK<VM>,
         bucket: WorkBucketStage,
     ) -> Self {
-        let base = ProcessEdgesBase::new(slots, roots, mmtk, bucket);
+        let base = ProcessEdgesBase::new(slots, index, roots, mmtk, bucket);
         let plan = base.plan().downcast_ref::<P>().unwrap();
         Self { plan, base }
     }
@@ -1012,19 +1031,24 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
 
     #[cfg(feature = "edge_enqueuing")]
     fn process_slots(&mut self) {
-        while let Some(slot) = self.slots.pop() {
+        let idx = self.index as usize;
+        while let Some(slot) = unsafe { self.slots.get_unchecked_mut(idx) }.pop() {
             self.process_slot(slot)
         }
+        self.flush();
     }
 
     #[cfg(feature = "edge_enqueuing")]
     fn flush(&mut self) {
-        if !self.slots.is_empty() {
-            let slots = std::mem::take(&mut self.slots);
-            let w = Self::new(slots, false, self.mmtk, self.bucket);
-            self.worker().add_work(self.bucket, w);
+        for i in 0..4 {
+            let idx = i as usize;
+            let slots = unsafe { self.slots.get_unchecked(idx) };
+            if !slots.is_empty() {
+                let w = Self::new(slots.clone(), idx, false, self.mmtk(), self.bucket);
+                self.worker().add_work(self.bucket, w);
+            }
         }
-        self.pushes = 0;
+        self.pushes = [0, 0, 0, 0];
     }
 }
 
@@ -1034,13 +1058,17 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
     fn enqueue(&mut self, object: ObjectReference) {
         let tls = self.worker().tls;
         let mut closure = |slot: VM::VMSlot| {
-            let Some(_) = slot.load() else { return };
-            self.slots.push(slot);
-            self.pushes += 1;
-            if self.slots.len() >= Self::CAPACITY
-                || self.pushes >= (Self::CAPACITY / 2) as u32
+            let Some(object) = slot.load() else { return };
+            let addr = object.to_raw_address();
+            let idx: usize = (unsafe {
+                SFT_DENSE_CHUNK_MAP_INDEX.load::<u8>(conversions::chunk_align_down(addr))
+            } - 1) as usize;
+            unsafe { self.slots.get_unchecked_mut(idx) }.push(slot);
+            unsafe { *self.pushes.get_unchecked_mut(idx) += 1 };
+            if unsafe { self.slots.get_unchecked(idx) }.len() >= Self::CAPACITY
+                || unsafe { *self.pushes.get_unchecked(idx) } >= (Self::CAPACITY / 2) as u32
             {
-                self.flush_half();
+                self.flush_half(idx);
             }
         };
         <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
@@ -1051,20 +1079,24 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
 impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKind>
     PlanProcessEdges<VM, P, KIND>
 {
-    fn flush_half(&mut self) {
-        let slots = if self.slots.len() > 1 {
-            let half = self.slots.len() / 2;
-            self.slots.split_off(half)
+    fn flush_half(&mut self, idx: usize) {
+        let _slots = unsafe { self.slots.get_unchecked_mut(idx) };
+        let slots = if _slots.len() > 1 {
+            let half = _slots.len() / 2;
+            _slots.split_off(half)
         } else {
             return;
         };
 
-        self.pushes = self.slots.len() as u32;
+        unsafe {
+            *(self.pushes.get_unchecked_mut(idx)) =
+                self.slots.get_unchecked(idx).len() as u32
+        };
         if slots.is_empty() {
             return;
         }
 
-        let w = Self::new(slots, false, self.mmtk(), self.bucket);
+        let w = Self::new(slots, idx, false, self.mmtk(), self.bucket);
         self.worker().add_work(self.bucket, w);
     }
 }
@@ -1206,8 +1238,9 @@ impl<VM: VMBinding, R2OPE: ProcessEdgesWork<VM = VM>, O2OPE: ProcessEdgesWork<VM
         // first time.  We will create a work packet for scanning those roots.
         let scanned_root_objects = {
             // We create an instance of E to use its `trace_object` method and its object queue.
+            // TODO(kunals): Figure out the correct index for this
             let mut process_edges_work =
-                R2OPE::new(vec![], true, mmtk, WorkBucketStage::PinningRootsTrace);
+                R2OPE::new(vec![], 0, true, mmtk, WorkBucketStage::PinningRootsTrace);
             process_edges_work.set_worker(worker);
 
             for object in self.roots.iter().copied() {
@@ -1224,7 +1257,8 @@ impl<VM: VMBinding, R2OPE: ProcessEdgesWork<VM = VM>, O2OPE: ProcessEdgesWork<VM
             process_edges_work.nodes.take()
         };
 
-        let process_edges_work = O2OPE::new(vec![], false, mmtk, self.bucket);
+        // TODO(kunals): Figure out the correct index for this
+        let process_edges_work = O2OPE::new(vec![], 0, false, mmtk, self.bucket);
         let work = process_edges_work.create_scan_work(scanned_root_objects);
         crate::memory_manager::add_work_packet(mmtk, self.bucket, work);
 
@@ -1259,6 +1293,7 @@ impl<VM: VMBinding> ProcessEdgesWork for UnsupportedProcessEdges<VM> {
 
     fn new(
         _slots: Vec<SlotOf<Self>>,
+        _index: usize,
         _roots: bool,
         _mmtk: &'static MMTK<Self::VM>,
         _bucket: WorkBucketStage,

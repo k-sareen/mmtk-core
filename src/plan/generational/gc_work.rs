@@ -4,11 +4,13 @@ use crate::plan::PlanTraceObject;
 use crate::plan::VectorObjectQueue;
 use crate::policy::gc_work::TraceKind;
 use crate::scheduler::{gc_work::*, GCWork, GCWorker, WorkBucketStage};
+use crate::util::conversions;
+use crate::util::metadata::side_metadata::spec_defs::SFT_DENSE_CHUNK_MAP_INDEX;
 use crate::util::ObjectReference;
 use crate::vm::slot::{MemorySlice, Slot};
 use crate::vm::*;
-use crate::MMTK;
 use crate::ObjectQueue;
+use crate::MMTK;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -34,11 +36,12 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
 
     fn new(
         slots: Vec<SlotOf<Self>>,
+        index: usize,
         roots: bool,
         mmtk: &'static MMTK<VM>,
         bucket: WorkBucketStage,
     ) -> Self {
-        let base = ProcessEdgesBase::new(slots, roots, mmtk, bucket);
+        let base = ProcessEdgesBase::new(slots, index, roots, mmtk, bucket);
         let plan = base.plan().downcast_ref().unwrap();
         Self { plan, base }
     }
@@ -53,7 +56,8 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
                 worker,
             )
         } else {
-            self.plan.trace_object_nursery::<_, KIND>(self, object, worker)
+            self.plan
+                .trace_object_nursery::<_, KIND>(self, object, worker)
         }
     }
 
@@ -81,35 +85,44 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
 
     #[cfg(feature = "edge_enqueuing")]
     fn process_slots(&mut self) {
-        while let Some(slot) = self.slots.pop() {
+        let idx = self.index as usize;
+        while let Some(slot) = unsafe { self.slots.get_unchecked_mut(idx) }.pop() {
             self.process_slot(slot)
         }
+        self.flush();
     }
 
     #[cfg(feature = "edge_enqueuing")]
     fn flush(&mut self) {
-        if !self.slots.is_empty() {
-            let slots = std::mem::take(&mut self.slots);
-            let w = Self::new(slots, false, self.mmtk(), self.bucket);
-            self.worker().add_work(self.bucket, w);
+        for i in 0..4 {
+            let idx = i as usize;
+            let slots = unsafe { self.slots.get_unchecked(idx) };
+            if !slots.is_empty() {
+                let w = Self::new(slots.clone(), idx, false, self.mmtk(), self.bucket);
+                self.worker().add_work(self.bucket, w);
+            }
         }
-        self.pushes = 0;
+        self.pushes = [0, 0, 0, 0];
     }
 }
 
-impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND: TraceKind> ObjectQueue
-    for GenNurseryProcessEdges<VM, P, KIND>
+impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND: TraceKind>
+    ObjectQueue for GenNurseryProcessEdges<VM, P, KIND>
 {
     fn enqueue(&mut self, object: ObjectReference) {
         let tls = self.worker().tls;
         let mut closure = |slot: VM::VMSlot| {
-            let Some(_) = slot.load() else { return };
-            self.slots.push(slot);
-            self.pushes += 1;
-            if self.slots.len() >= Self::CAPACITY
-                || self.pushes >= (Self::CAPACITY / 2) as u32
+            let Some(object) = slot.load() else { return };
+            let addr = object.to_raw_address();
+            let idx: usize = (unsafe {
+                SFT_DENSE_CHUNK_MAP_INDEX.load::<u8>(conversions::chunk_align_down(addr))
+            } - 1) as usize;
+            unsafe { self.slots.get_unchecked_mut(idx) }.push(slot);
+            unsafe { *self.pushes.get_unchecked_mut(idx) += 1 };
+            if unsafe { self.slots.get_unchecked(idx) }.len() >= Self::CAPACITY
+                || unsafe { *self.pushes.get_unchecked(idx) } >= (Self::CAPACITY / 2) as u32
             {
-                self.flush_half();
+                self.flush_half(idx);
             }
         };
         <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
@@ -120,20 +133,24 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
 impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND: TraceKind>
     GenNurseryProcessEdges<VM, P, KIND>
 {
-    fn flush_half(&mut self) {
-        let slots = if self.slots.len() > 1 {
-            let half = self.slots.len() / 2;
-            self.slots.split_off(half)
+    fn flush_half(&mut self, idx: usize) {
+        let _slots = unsafe { self.slots.get_unchecked_mut(idx) };
+        let slots = if _slots.len() > 1 {
+            let half = _slots.len() / 2;
+            _slots.split_off(half)
         } else {
             return;
         };
 
-        self.pushes = self.slots.len() as u32;
+        unsafe {
+            *(self.pushes.get_unchecked_mut(idx)) =
+                self.slots.get_unchecked(idx).len() as u32
+        };
         if slots.is_empty() {
             return;
         }
 
-        let w = Self::new(slots, false, self.mmtk(), self.bucket);
+        let w = Self::new(slots, idx, false, self.mmtk(), self.bucket);
         self.worker().add_work(self.bucket, w);
     }
 }
@@ -237,8 +254,9 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessRegionModBuf<E> {
                 }
             }
             // Forward entries
+            // TODO(kunals): Figure out the correct index for this
             GCWork::do_work(
-                &mut E::new(slots, false, mmtk, WorkBucketStage::Closure),
+                &mut E::new(slots, 0, false, mmtk, WorkBucketStage::Closure),
                 worker,
                 mmtk,
             )

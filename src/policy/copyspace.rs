@@ -199,6 +199,8 @@ impl<VM: VMBinding> CopySpace<VM> {
             // Clear VO bits because all objects in the space are dead.
             #[cfg(feature = "vo_bit")]
             crate::util::metadata::vo_bit::bzero_vo_bit(start, size);
+            #[cfg(debug_assertions)]
+            crate::util::memory::set(start, 0xbc, size);
         }
 
         unsafe {

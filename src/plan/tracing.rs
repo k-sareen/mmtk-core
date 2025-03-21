@@ -105,7 +105,7 @@ impl<'a, E: ProcessEdgesWork> ObjectsClosure<'a, E> {
         if !buf.is_empty() {
             self.worker.add_work(
                 self.bucket,
-                E::new(buf, false, self.worker.mmtk, self.bucket),
+                E::new(buf, 0, false, self.worker.mmtk, self.bucket),
             );
         }
     }
