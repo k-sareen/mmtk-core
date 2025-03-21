@@ -40,25 +40,35 @@ pub fn create_mutator<VM: VMBinding>(
     mmtk: &'static MMTK<VM>,
 ) -> Box<Mutator<VM>> {
     Box::new(match *mmtk.options.plan {
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::NoGC => crate::plan::nogc::mutator::create_nogc_mutator(tls, mmtk),
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::SemiSpace => crate::plan::semispace::mutator::create_ss_mutator(tls, mmtk),
         PlanSelector::GenCopy => {
             crate::plan::generational::copying::mutator::create_gencopy_mutator(tls, mmtk)
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::GenImmix => {
             crate::plan::generational::immix::mutator::create_genimmix_mutator(tls, mmtk)
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::MarkSweep => crate::plan::marksweep::mutator::create_ms_mutator(tls, mmtk),
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::Immix => crate::plan::immix::mutator::create_immix_mutator(tls, mmtk),
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::PageProtect => {
             crate::plan::pageprotect::mutator::create_pp_mutator(tls, mmtk)
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::MarkCompact => {
             crate::plan::markcompact::mutator::create_markcompact_mutator(tls, mmtk)
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::StickyImmix => {
             crate::plan::sticky::immix::mutator::create_stickyimmix_mutator(tls, mmtk)
         }
+        #[cfg(feature = "specialization")]
+        _ => panic!("Specialization is enabled, but the plan is not GenCopy."),
     })
 }
 
@@ -67,31 +77,41 @@ pub fn create_plan<VM: VMBinding>(
     args: CreateGeneralPlanArgs<VM>,
 ) -> Box<dyn Plan<VM = VM>> {
     let plan = match plan {
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::NoGC => {
             Box::new(crate::plan::nogc::NoGC::new(args)) as Box<dyn Plan<VM = VM>>
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::SemiSpace => {
             Box::new(crate::plan::semispace::SemiSpace::new(args)) as Box<dyn Plan<VM = VM>>
         }
         PlanSelector::GenCopy => Box::new(crate::plan::generational::copying::GenCopy::new(args))
             as Box<dyn Plan<VM = VM>>,
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::GenImmix => Box::new(crate::plan::generational::immix::GenImmix::new(args))
             as Box<dyn Plan<VM = VM>>,
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::MarkSweep => {
             Box::new(crate::plan::marksweep::MarkSweep::new(args)) as Box<dyn Plan<VM = VM>>
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::Immix => {
             Box::new(crate::plan::immix::Immix::new(args)) as Box<dyn Plan<VM = VM>>
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::PageProtect => {
             Box::new(crate::plan::pageprotect::PageProtect::new(args)) as Box<dyn Plan<VM = VM>>
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::MarkCompact => {
             Box::new(crate::plan::markcompact::MarkCompact::new(args)) as Box<dyn Plan<VM = VM>>
         }
+        #[cfg(not(feature = "specialization"))]
         PlanSelector::StickyImmix => {
             Box::new(crate::plan::sticky::immix::StickyImmix::new(args)) as Box<dyn Plan<VM = VM>>
         }
+        #[cfg(feature = "specialization")]
+        _ => panic!("Specialization is enabled, but the plan is not GenCopy."),
     };
 
     // We have created Plan in the heap, and we won't explicitly move it.

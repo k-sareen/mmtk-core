@@ -42,13 +42,20 @@ pub use tracing::{ObjectQueue, ObjectsClosure, VectorObjectQueue, VectorQueue};
 /// Generational plans (with a copying nursery)
 mod generational;
 /// Sticky plans (using sticky marks for generational behaviors without a copying nursery)
+#[cfg(not(feature = "specialization"))]
 mod sticky;
 
+#[cfg(not(feature = "specialization"))]
 mod immix;
+#[cfg(not(feature = "specialization"))]
 mod markcompact;
+#[cfg(not(feature = "specialization"))]
 mod marksweep;
+#[cfg(not(feature = "specialization"))]
 mod nogc;
+#[cfg(not(feature = "specialization"))]
 mod pageprotect;
+#[cfg(not(feature = "specialization"))]
 mod semispace;
 
 pub(crate) use generational::global::is_nursery_gc;
@@ -58,11 +65,19 @@ pub(crate) use generational::global::GenerationalPlan;
 // it is possible for performance reasons that they want the constraints as constants.
 
 pub use generational::copying::GENCOPY_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use generational::immix::GENIMMIX_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use immix::IMMIX_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use markcompact::MARKCOMPACT_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use marksweep::MS_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use nogc::NOGC_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use pageprotect::PP_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use semispace::SS_CONSTRAINTS;
+#[cfg(not(feature = "specialization"))]
 pub use sticky::immix::STICKY_IMMIX_CONSTRAINTS;

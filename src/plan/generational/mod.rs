@@ -24,6 +24,7 @@ pub mod barrier;
 /// Generational copying (GenCopy)
 pub mod copying;
 /// Generational immix (GenImmix)
+#[cfg(not(feature = "specialization"))]
 pub mod immix;
 
 // Common generational code
