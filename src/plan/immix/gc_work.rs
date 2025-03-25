@@ -12,6 +12,8 @@ impl<VM: VMBinding, const KIND: TraceKind> crate::scheduler::GCWorkContext
 {
     type VM = VM;
     type PlanType = Immix<VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType = Immix<VM>;
     type DefaultProcessEdges = PlanProcessEdges<VM, Immix<VM>, KIND>;
     type PinningProcessEdges = PlanProcessEdges<VM, Immix<VM>, TRACE_KIND_TRANSITIVE_PIN>;
 }
