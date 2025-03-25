@@ -10,6 +10,8 @@ pub struct GenImmixNurseryGCWorkContext<VM: VMBinding>(std::marker::PhantomData<
 impl<VM: VMBinding> crate::scheduler::GCWorkContext for GenImmixNurseryGCWorkContext<VM> {
     type VM = VM;
     type PlanType = GenImmix<VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType = GenImmix<VM>;
     type DefaultProcessEdges = GenNurseryProcessEdges<VM, Self::PlanType, DEFAULT_TRACE>;
     type PinningProcessEdges = UnsupportedProcessEdges<VM>;
 }
@@ -22,6 +24,8 @@ impl<VM: VMBinding, const KIND: TraceKind> crate::scheduler::GCWorkContext
 {
     type VM = VM;
     type PlanType = GenImmix<VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType = GenImmix<VM>;
     type DefaultProcessEdges = PlanProcessEdges<VM, GenImmix<VM>, KIND>;
     type PinningProcessEdges = UnsupportedProcessEdges<VM>;
 }
