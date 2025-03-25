@@ -138,6 +138,12 @@ pub trait RootsWorkFactory<SL: Slot>: Clone + Send + 'static {
     fn create_process_tpinning_roots_work(&mut self, nodes: Vec<ObjectReference>);
 }
 
+#[cfg(feature = "single_worker")]
+pub trait ObjectGraphTraversal<SL: Slot> {
+    fn report_roots(&mut self, root_slots: Vec<SL>);
+    fn traverse_from_roots(&mut self);
+}
+
 /// VM-specific methods for scanning roots/objects.
 pub trait Scanning<VM: VMBinding> {
     /// When set to `true`, all plans will guarantee that during each GC, each live object is
@@ -256,6 +262,13 @@ pub trait Scanning<VM: VMBinding> {
         factory: impl RootsWorkFactory<VM::VMSlot>,
     );
 
+    #[cfg(feature = "single_worker")]
+    fn single_threaded_scan_roots_in_mutator_thread(
+        tls: VMWorkerThread,
+        mutator: &'static mut Mutator<VM>,
+        closure: impl ObjectGraphTraversal<VM::VMSlot>,
+    );
+
     /// Scan all VM space objects. Creates ScanObject work packets.
     fn scan_vm_space_objects(_tls: VMWorkerThread, _closure: impl FnMut(Vec<ObjectReference>)) {}
 
@@ -269,6 +282,12 @@ pub trait Scanning<VM: VMBinding> {
     /// * `tls`: The GC thread that is performing this scanning.
     /// * `factory`: The VM uses it to create work packets for scanning roots.
     fn scan_vm_specific_roots(tls: VMWorkerThread, factory: impl RootsWorkFactory<VM::VMSlot>);
+
+    #[cfg(feature = "single_worker")]
+    fn single_threaded_scan_vm_specific_roots(
+        tls: VMWorkerThread,
+        closure: impl ObjectGraphTraversal<VM::VMSlot>,
+    );
 
     /// Return whether the VM supports return barriers. This is unused at the moment.
     fn supports_return_barrier() -> bool;

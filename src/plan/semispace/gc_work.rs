@@ -7,6 +7,8 @@ pub struct SSGCWorkContext<VM: VMBinding, const KIND: TraceKind>(std::marker::Ph
 impl<VM: VMBinding, const KIND: TraceKind> crate::scheduler::GCWorkContext for SSGCWorkContext<VM, KIND> {
     type VM = VM;
     type PlanType = SemiSpace<VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType = SemiSpace<VM>;
     type DefaultProcessEdges = PlanProcessEdges<Self::VM, SemiSpace<VM>, KIND>;
     type PinningProcessEdges = UnsupportedProcessEdges<VM>;
 }

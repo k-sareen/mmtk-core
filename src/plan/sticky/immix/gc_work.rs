@@ -13,6 +13,8 @@ pub struct StickyImmixNurseryGCWorkContext<VM: VMBinding, const KIND: TraceKind>
 impl<VM: VMBinding, const KIND: TraceKind> crate::scheduler::GCWorkContext for StickyImmixNurseryGCWorkContext<VM, KIND> {
     type VM = VM;
     type PlanType = StickyImmix<VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType = StickyImmix<VM>;
     type DefaultProcessEdges = GenNurseryProcessEdges<VM, Self::PlanType, KIND>;
     type PinningProcessEdges =
         GenNurseryProcessEdges<VM, Self::PlanType, TRACE_KIND_TRANSITIVE_PIN>;
@@ -26,6 +28,8 @@ impl<VM: VMBinding, const KIND: TraceKind> crate::scheduler::GCWorkContext
 {
     type VM = VM;
     type PlanType = StickyImmix<VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType = StickyImmix<VM>;
     type DefaultProcessEdges = PlanProcessEdges<VM, Self::PlanType, KIND>;
     type PinningProcessEdges = PlanProcessEdges<VM, Self::PlanType, TRACE_KIND_TRANSITIVE_PIN>;
 }

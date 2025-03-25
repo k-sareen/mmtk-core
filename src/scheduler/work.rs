@@ -1,5 +1,7 @@
 use super::worker::*;
 use crate::mmtk::MMTK;
+#[cfg(feature = "single_worker")]
+use crate::plan::PlanTraceObject;
 use crate::vm::VMBinding;
 #[cfg(feature = "work_packet_stats")]
 use std::any::{type_name, TypeId};
@@ -74,6 +76,8 @@ use crate::plan::Plan;
 pub trait GCWorkContext: Send + 'static {
     type VM: VMBinding;
     type PlanType: Plan<VM = Self::VM>;
+    #[cfg(feature = "single_worker")]
+    type STPlanType: Plan<VM = Self::VM> + PlanTraceObject<Self::VM> + Send;
 
     // FIXME: We should use `SFTProcessEdges` as the default value for `DefaultProcessEdges`, and
     // `UnsupportedProcessEdges` for `PinningProcessEdges`.  However, this requires
