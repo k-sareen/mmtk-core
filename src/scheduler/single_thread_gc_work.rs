@@ -125,6 +125,7 @@ where
     }
 
     pub fn execute(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
+        probe!(mmtk, prepare_start);
         // SAFETY: We're a single threaded GC, so no other thread can access the plan
         let plan_mut: &mut P = unsafe { &mut *(self.plan as *const _ as *mut _) };
         plan_mut.prepare(worker.tls);
@@ -141,6 +142,7 @@ where
 
         // Set GC status
         mmtk.set_gc_status(GcStatus::GcProper);
+        probe!(mmtk, prepare_end);
     }
 }
 
@@ -165,6 +167,7 @@ where
     }
 
     pub fn execute(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
+        probe!(mmtk, release_start);
         mmtk.gc_trigger.policy.on_gc_release(mmtk);
         // SAFETY: We're a single threaded GC, so no other thread can access the plan
         let plan_mut: &mut P = unsafe { &mut *(self.plan as *const _ as *mut _) };
@@ -178,6 +181,7 @@ where
 
         // Set GC status
         // mmtk.set_gc_status(GcStatus::NotInGC);
+        probe!(mmtk, release_end);
     }
 }
 
@@ -206,12 +210,14 @@ where
         worker: &mut GCWorker<VM>,
         mmtk: &'static MMTK<VM>,
     ) {
+        probe!(mmtk, stop_mutators_and_process_thread_roots_start);
         mmtk.state.prepare_for_stack_scanning();
         let num_mutators = <VM as VMBinding>::VMActivePlan::number_of_mutators();
         <VM as VMBinding>::VMCollection::stop_all_mutators(worker.tls, |mutator| {
             STScanMutatorRoots::<VM, P, KIND>::new(mutator, num_mutators).execute(closure, worker, mmtk);
         });
         mmtk.scheduler.notify_mutators_paused(mmtk);
+        probe!(mmtk, stop_mutators_and_process_thread_roots_end);
     }
 }
 
@@ -336,6 +342,7 @@ where
         worker: &mut GCWorker<VM>,
         mmtk: &'static MMTK<VM>
     ) {
+        probe!(mmtk, scan_and_process_mutator_roots_start);
         <VM as VMBinding>::VMScanning::single_threaded_scan_roots_in_mutator_thread(
             worker.tls,
             unsafe { &mut *(self.mutator as *mut _) },
@@ -346,6 +353,7 @@ where
                 false, worker.tls,
             );
         }
+        probe!(mmtk, scan_and_process_mutator_roots_end);
     }
 }
 
@@ -372,6 +380,8 @@ where
         worker: &mut GCWorker<VM>,
         _mmtk: &'static MMTK<VM>,
     ) {
+        probe!(mmtk, scan_and_process_vm_roots_start);
         <VM as VMBinding>::VMScanning::single_threaded_scan_vm_specific_roots(worker.tls, closure);
+        probe!(mmtk, scan_and_process_vm_roots_end);
     }
 }
