@@ -98,7 +98,6 @@ where
         let mut closure = STObjectGraphTraversalClosure::<VM, P, DEFAULT_TRACE>::new(mmtk, worker);
         STStopMutators::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpecificRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
-        (&mut closure).traverse_from_roots();
         STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
         // We implicitly resume mutators in Scheduler::on_gc_finished so we don't have a separate
         // implementation for that
@@ -248,7 +247,7 @@ where
         Self {
             plan: mmtk.get_plan().downcast_ref::<P>().unwrap(),
             worker,
-            slots: Vec::with_capacity(EDGES_WORK_BUFFER_SIZE),
+            slots: Vec::new(),
         }
     }
 
@@ -260,8 +259,13 @@ where
         let Some(object) = slot.load() else { return };
         let new_object = self.plan.trace_object::<_, KIND>(self, object, self.worker());
         if P::may_move_objects::<KIND>() && new_object != object {
-            // info!("Moving object from {:?} to {:?}", object, new_object);
             slot.store(new_object);
+        }
+    }
+
+    fn traverse_from_roots(&mut self) {
+        while let Some(slot) = self.slots.pop() {
+            self.process_slot(slot);
         }
     }
 }
@@ -290,16 +294,13 @@ where
     P: Plan<VM = VM> + PlanTraceObject<VM>,
 {
     fn report_roots(&mut self, root_slots: Vec<VM::VMSlot>) {
-        self.slots.extend(root_slots);
-    }
-
-    fn traverse_from_roots(&mut self) {
-        while let Some(slot) = self.slots.pop() {
-            self.process_slot(slot);
-        }
+        assert!(self.slots.is_empty());
+        self.slots = Vec::from(root_slots);
+        self.traverse_from_roots();
     }
 }
 
+#[cfg(debug_assertions)]
 impl<VM, P, const KIND: TraceKind> Drop for STObjectGraphTraversalClosure<VM, P, KIND>
 where
     VM: VMBinding,
