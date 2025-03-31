@@ -146,7 +146,7 @@ impl GlobalState {
         debug_assert!(
             old < n_mutators,
             "The number of scanned stacks ({}) is more than the number of mutators ({})",
-            old,
+            old + 1,
             n_mutators
         );
         let scanning_done = old + 1 == n_mutators;
