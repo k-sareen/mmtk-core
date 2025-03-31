@@ -212,9 +212,8 @@ where
     ) {
         probe!(mmtk, stop_mutators_and_process_thread_roots_start);
         mmtk.state.prepare_for_stack_scanning();
-        let num_mutators = <VM as VMBinding>::VMActivePlan::number_of_mutators();
         <VM as VMBinding>::VMCollection::stop_all_mutators(worker.tls, |mutator| {
-            STScanMutatorRoots::<VM, P, KIND>::new(mutator, num_mutators).execute(closure, worker, mmtk);
+            STScanMutatorRootsAndFlushBuffers::<VM, P, KIND>::new(mutator).execute(closure, worker, mmtk);
         });
         mmtk.scheduler.notify_mutators_paused(mmtk);
         probe!(mmtk, stop_mutators_and_process_thread_roots_end);
@@ -317,23 +316,22 @@ where
     }
 }
 
-pub(crate) struct STScanMutatorRoots<
+pub(crate) struct STScanMutatorRootsAndFlushBuffers<
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
     const KIND: TraceKind,
 > {
     pub mutator: &'static mut Mutator<VM>,
-    num_mutators: usize,
     phantom: PhantomData<(VM, P)>,
 }
 
-impl<VM, P, const KIND: TraceKind> STScanMutatorRoots<VM, P, KIND>
+impl<VM, P, const KIND: TraceKind> STScanMutatorRootsAndFlushBuffers<VM, P, KIND>
 where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
 {
-    pub fn new(mutator: &'static mut Mutator<VM>, num_mutators: usize) -> Self {
-        Self { mutator, num_mutators, phantom: PhantomData }
+    pub fn new(mutator: &'static mut Mutator<VM>) -> Self {
+        Self { mutator, phantom: PhantomData }
     }
 
     pub fn execute(
@@ -343,12 +341,14 @@ where
         mmtk: &'static MMTK<VM>
     ) {
         probe!(mmtk, scan_and_process_mutator_roots_start);
+        let num_mutators = <VM as VMBinding>::VMActivePlan::number_of_mutators();
         <VM as VMBinding>::VMScanning::single_threaded_scan_roots_in_mutator_thread(
             worker.tls,
             unsafe { &mut *(self.mutator as *mut _) },
             closure,
         );
-        if mmtk.state.inform_stack_scanned(self.num_mutators) {
+        self.mutator.flush();
+        if mmtk.state.inform_stack_scanned(num_mutators) {
             <VM as VMBinding>::VMScanning::notify_initial_thread_scan_complete(
                 false, worker.tls,
             );
