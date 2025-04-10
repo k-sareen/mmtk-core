@@ -9,10 +9,12 @@ use crate::plan::PlanConstraints;
 use crate::policy::copyspace::CopySpace;
 use crate::policy::space::Space;
 use crate::scheduler::*;
+use crate::util;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
+use crate::util::heap::vm_layout::BYTES_IN_CHUNK;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::util::opaque_pointer::VMWorkerThread;
 use crate::util::rust_util::{likely, unlikely};
@@ -196,15 +198,18 @@ impl<VM: VMBinding> SemiSpace<VM> {
 
         // Add the chunk mark table to the list of global metadata
         plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+        let _max_heap_mb = util::conversions::raw_align_up(plan_args.global_args.gc_trigger.policy.get_max_heap_size_in_pages() * 4 * 1024, BYTES_IN_CHUNK) / 2 / 1024 / 1024;
 
         let res = SemiSpace {
             hi: AtomicBool::new(false),
             copyspace0: CopySpace::new(
                 plan_args.get_space_args("copyspace0", true, false, VMRequest::discontiguous()),
+                // plan_args.get_space_args("copyspace0", true, false, VMRequest::fixed_size(_max_heap_mb)),
                 false,
             ),
             copyspace1: CopySpace::new(
                 plan_args.get_space_args("copyspace1", true, false, VMRequest::discontiguous()),
+                // plan_args.get_space_args("copyspace1", true, false, VMRequest::fixed_size(_max_heap_mb)),
                 true,
             ),
             common: CommonPlan::new(plan_args),

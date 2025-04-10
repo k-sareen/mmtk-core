@@ -623,9 +623,11 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 true,
                 false,
                 VMRequest::discontiguous(),
+                // VMRequest::fixed_size(4),
             )),
             los: LargeObjectSpace::new(
                 args.get_space_args("los", true, false, VMRequest::discontiguous()),
+                // args.get_space_args("los", true, false, VMRequest::fixed_size(16)),
                 false,
             ),
             nonmoving: ImmortalSpace::new(args.get_space_args(
@@ -633,6 +635,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 true,
                 false,
                 VMRequest::discontiguous(),
+                // VMRequest::fixed_size(4)
             )),
             zygote,
             base: BasePlan::new(args),

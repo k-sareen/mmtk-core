@@ -72,6 +72,7 @@ impl IntArrayFreeList {
     }
     pub fn resize_freelist(&mut self, units: usize, grain: i32) {
         // debug_assert!(self.parent.is_none() && !selected_plan::PLAN.is_initialized());
+        assert!(grain > 0);
         *self.table_mut() = vec![0; (units + 1 + self.heads as usize) << 1];
         self.initialize_heap(units as _, grain);
     }

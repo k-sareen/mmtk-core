@@ -49,7 +49,7 @@ impl SpaceDescriptor {
             );
         }
         let chunks = (end - start) >> vm_layout::LOG_BYTES_IN_CHUNK;
-        debug_assert!(!start.is_zero() && chunks > 0 && chunks < (1 << SIZE_BITS));
+        debug_assert!(!start.is_zero() && chunks > 0 && chunks < (1 << SIZE_BITS), "start = {}, end = {}, chunks = {}, 1 << SIZE_BITS = {}", start, end, chunks, 1 << SIZE_BITS);
         let mut tmp = start >> BASE_EXPONENT;
         let mut exponent = 0;
         while (tmp != 0) && ((tmp & 1) == 0) {
