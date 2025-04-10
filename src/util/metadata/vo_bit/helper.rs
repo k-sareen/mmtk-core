@@ -139,7 +139,7 @@ pub(crate) fn on_trace_object<VM: VMBinding>(object: ObjectReference) {
         // If the VO bits are available during tracing,
         // we validate the objects we trace using the VO bits.
         debug_assert!(
-            vo_bit::is_vo_bit_set::<VM>(object),
+            vo_bit::is_vo_bit_set(object),
             "{:x}: VO bit not set",
             object
         );
@@ -150,7 +150,7 @@ pub(crate) fn on_object_marked<VM: VMBinding>(object: ObjectReference) {
     match strategy::<VM>() {
         VOBitUpdateStrategy::ClearAndReconstruct => {
             // In this strategy, we set the VO bit when an object is marked.
-            vo_bit::set_vo_bit::<VM>(object);
+            vo_bit::set_vo_bit(object);
         }
         VOBitUpdateStrategy::CopyFromMarkBits => {
             // VO bit was not cleared before tracing in this strategy.  Do nothing.
@@ -162,7 +162,7 @@ pub(crate) fn on_object_forwarded<VM: VMBinding>(new_object: ObjectReference) {
     match strategy::<VM>() {
         VOBitUpdateStrategy::ClearAndReconstruct => {
             // In this strategy, we set the VO bit of the to-space object when forwarded.
-            vo_bit::set_vo_bit::<VM>(new_object);
+            vo_bit::set_vo_bit(new_object);
         }
         VOBitUpdateStrategy::CopyFromMarkBits => {
             // In this strategy, we will copy mark bits to VO bits.
@@ -175,7 +175,7 @@ pub(crate) fn on_object_forwarded<VM: VMBinding>(new_object: ObjectReference) {
             );
 
             // We set the VO bit for the to-space object eagerly.
-            vo_bit::set_vo_bit::<VM>(new_object);
+            vo_bit::set_vo_bit(new_object);
         }
     }
 }

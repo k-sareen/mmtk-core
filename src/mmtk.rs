@@ -552,7 +552,11 @@ impl<VM: VMBinding> MMTK<VM> {
     }
 
     /// The application code has requested a collection. This is just a GC hint, and
-    /// we may ignore it. Returns whether a GC was ran or not.
+    /// we may ignore it.
+    ///
+    /// Returns whether a GC was ran or not. If MMTk triggers a GC, this method will block the
+    /// calling thread and return true when the GC finishes. Otherwise, this method returns
+    /// false immediately.
     ///
     /// # Arguments
     /// * `tls`: The mutator thread that requests the GC
@@ -622,6 +626,8 @@ impl<VM: VMBinding> MMTK<VM> {
         if let Some(gen) = self.get_plan().generational() {
             gen.force_full_heap_collection();
         }
+
+        false
     }
 
     /// MMTK has requested stop-the-world activity (e.g., stw within a concurrent gc).

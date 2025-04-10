@@ -156,11 +156,11 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         // We may have to set mark bit to 1 in case the marked state is 0
         self.mark_state.on_object_metadata_initialization::<VM>(object);
         #[cfg(feature = "vo_bit")]
-        crate::util::metadata::vo_bit::set_vo_bit::<VM>(object);
+        crate::util::metadata::vo_bit::set_vo_bit(object);
     }
     #[cfg(feature = "is_mmtk_object")]
     fn is_mmtk_object(&self, addr: Address) -> Option<ObjectReference> {
-        crate::util::metadata::vo_bit::is_vo_bit_set_for_addr::<VM>(addr)
+        crate::util::metadata::vo_bit::is_vo_bit_set_for_addr(addr)
     }
     #[cfg(feature = "is_mmtk_object")]
     fn find_object_from_internal_pointer(
@@ -239,7 +239,7 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for ImmixSpace
         if KIND == TRACE_KIND_TRANSITIVE_PIN || KIND == TRACE_KIND_FAST {
             self.trace_object_without_moving(queue, object)
         } else if KIND == TRACE_KIND_DEFRAG {
-            if Block::containing::<VM>(object).is_defrag_source() {
+            if Block::containing(object).is_defrag_source() {
                 debug_assert!(self.in_defrag());
                 debug_assert!(
                     !crate::plan::is_nursery_gc(worker.mmtk.get_plan()),
@@ -602,7 +602,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                     self.mark_lines(object);
                 }
             } else {
-                Block::containing::<VM>(object).set_state(BlockState::Marked);
+                Block::containing(object).set_state(BlockState::Marked);
             }
 
             #[cfg(feature = "vo_bit")]
@@ -651,9 +651,9 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 } else {
                     // new_object != object
                     debug_assert!(
-                        !Block::containing::<VM>(new_object).is_defrag_source(),
+                        !Block::containing(new_object).is_defrag_source(),
                         "Block {:?} containing forwarded object {} should not be a defragmentation source",
-                        Block::containing::<VM>(new_object),
+                        Block::containing(new_object),
                         new_object,
                     );
                 }
@@ -672,7 +672,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             {
                 self.mark_state.test_and_mark::<VM>(object);
                 object_forwarding::clear_forwarding_bits::<VM>(object);
-                Block::containing::<VM>(object).set_state(BlockState::Marked);
+                Block::containing(object).set_state(BlockState::Marked);
 
                 #[cfg(feature = "vo_bit")]
                 vo_bit::helper::on_object_marked::<VM>(object);
@@ -697,12 +697,12 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 new_object
             };
             debug_assert_eq!(
-                Block::containing::<VM>(new_object).get_state(),
+                Block::containing(new_object).get_state(),
                 BlockState::Marked
             );
 
             queue.enqueue(new_object);
-            debug_assert!(new_object.is_live::<VM>());
+            debug_assert!(new_object.is_live());
             self.unlog_object_if_needed(new_object);
             new_object
         }
