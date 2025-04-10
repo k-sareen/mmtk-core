@@ -48,6 +48,7 @@ pub struct Stats {
     pub shared: Arc<SharedStats>,
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
     exceeded_phase_limit: AtomicBool,
+    #[cfg(feature = "perf_counter")]
     pub power_stats: Arc<Mutex<PowerStats>>,
 }
 
@@ -74,6 +75,7 @@ impl Stats {
             shared,
             counters: Mutex::new(counters),
             exceeded_phase_limit: AtomicBool::new(false),
+            #[cfg(feature = "perf_counter")]
             power_stats: Arc::new(Mutex::new(PowerStats::new())),
         }
     }
@@ -209,6 +211,7 @@ impl Stats {
         for value in scheduler_stat.values() {
             output_string.push_str(format!("{}\t", value).as_str());
         }
+        #[cfg(feature = "perf_counter")]
         {
             let power_stats = self.power_stats.lock().unwrap();
             power_stats.print_stats(&mut output_string);
@@ -237,8 +240,11 @@ impl Stats {
         for name in scheduler_stat.keys() {
             output_string.push_str(format!("{}\t", name).as_str());
         }
-        let power_stats = self.power_stats.lock().unwrap();
-        power_stats.print_column_names(output_string);
+        #[cfg(feature = "perf_counter")]
+        {
+            let power_stats = self.power_stats.lock().unwrap();
+            power_stats.print_column_names(output_string);
+        }
         output_string.push('\n');
     }
 
@@ -255,8 +261,11 @@ impl Stats {
                 ctr.start();
             }
         }
-        let mut power_stats = self.power_stats.lock().unwrap();
-        power_stats.start_all();
+        #[cfg(feature = "perf_counter")]
+        {
+            let mut power_stats = self.power_stats.lock().unwrap();
+            power_stats.start_all();
+        }
     }
 
     pub fn stop_all<VM: VMBinding>(&self, mmtk: &'static MMTK<VM>) {
@@ -269,8 +278,11 @@ impl Stats {
         for c in &(*counters) {
             c.lock().unwrap().stop();
         }
-        let mut power_stats = self.power_stats.lock().unwrap();
-        power_stats.stop_all();
+        #[cfg(feature = "perf_counter")]
+        {
+            let mut power_stats = self.power_stats.lock().unwrap();
+            power_stats.stop_all();
+        }
         self.shared.set_gathering_stats(false);
     }
 
