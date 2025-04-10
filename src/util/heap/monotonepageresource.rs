@@ -344,7 +344,12 @@ impl<VM: VMBinding> MonotonePageResource<VM> {
             type Item = (Address, usize);
             fn next(&mut self) -> Option<Self::Item> {
                 if let Some(range) = self.contiguous_space.take() {
-                    Some((range.start, range.end - range.start))
+                    let end = if self.pr.cursor().chunk_index() == range.start.chunk_index() {
+                        self.pr.cursor()
+                    } else {
+                        range.end
+                    };
+                    Some((range.start, end - range.start))
                 } else if self.discontiguous_start.is_zero() {
                     None
                 } else {
