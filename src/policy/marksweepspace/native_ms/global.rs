@@ -431,7 +431,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         } else {
             if self.test_and_mark(object) {
                 trace!("MarkSweep nursery object {}, tracing", object);
-                let block = Block::containing::<VM>(object);
+                let block = Block::containing(object);
                 block.set_state(BlockState::Marked);
                 queue.enqueue(object);
                 if self.common.needs_log_bit {

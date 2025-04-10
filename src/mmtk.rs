@@ -589,6 +589,7 @@ impl<VM: VMBinding> MMTK<VM> {
             VM::VMCollection::block_for_gc(tls);
             return true;
         }
+
         false
     }
 
@@ -626,8 +627,6 @@ impl<VM: VMBinding> MMTK<VM> {
         if let Some(gen) = self.get_plan().generational() {
             gen.force_full_heap_collection();
         }
-
-        false
     }
 
     /// MMTK has requested stop-the-world activity (e.g., stw within a concurrent gc).
