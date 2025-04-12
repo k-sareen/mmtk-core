@@ -632,7 +632,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         #[cfg(feature = "vo_bit")]
         vo_bit::helper::on_trace_object::<VM>(object);
 
-        let mark_word = object_forwarding::get_mark_word::<VM>(object);
+        let mark_word = unsafe { object_forwarding::get_mark_word_nonatomic::<VM>(object) };
         let potential_fwd = object_forwarding::attempt_to_forward::<VM>(object, mark_word);
         if let Some(_) = potential_fwd {
             // We lost the forwarding race as some other thread has set the forwarding word; wait

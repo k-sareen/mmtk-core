@@ -257,7 +257,7 @@ impl<VM: VMBinding> CopySpace<VM> {
         );
 
         trace!("attempting to forward");
-        let mark_word = object_forwarding::get_mark_word::<VM>(object);
+        let mark_word = unsafe { object_forwarding::get_mark_word_nonatomic::<VM>(object) };
         let potential_fwd = object_forwarding::attempt_to_forward::<VM>(object, mark_word);
 
         trace!("checking if object is being forwarded");

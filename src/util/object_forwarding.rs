@@ -13,7 +13,8 @@ const FORWARDING_MASK: u8 = 0b11;
 const FORWARDING_BITS: usize = 2;
 
 const CLAIMED_FORWARDING_POINTER: u32 = 0x8;
-const CLAIMED_FORWARDING_POINTER_AS_ADDRESS: Address = unsafe { Address::from_usize(CLAIMED_FORWARDING_POINTER as usize) };
+const CLAIMED_FORWARDING_POINTER_AS_ADDRESS: Address =
+    unsafe { Address::from_usize(CLAIMED_FORWARDING_POINTER as usize) };
 const FORWARDING_BIT_SIZE: u32 = 1;
 const FORWARDING_BIT_SHIFT: u32 = 29;
 const FORWARDING_BIT_MASK: u32 = (1 << FORWARDING_BIT_SIZE) - 1;
@@ -66,20 +67,23 @@ pub fn attempt_to_forward<VM: VMBinding>(
 ///
 /// Returns a reference to the new object.
 ///
-pub fn spin_and_get_forwarded_object<VM: VMBinding>(
-    object: ObjectReference,
-) -> ObjectReference {
-    let mut forwarding_ptr = read_potential_forwarding_pointer::<VM>(object);
-    while forwarding_ptr == CLAIMED_FORWARDING_POINTER_AS_ADDRESS {
-        forwarding_ptr = read_potential_forwarding_pointer::<VM>(object);
+pub fn spin_and_get_forwarded_object<VM: VMBinding>(object: ObjectReference) -> ObjectReference {
+    let mut mark_word = unsafe { get_mark_word_nonatomic::<VM>(object) };
+    while state_is_being_forwarded(mark_word) {
+        // XXX(kunals): Need to use relaxed ordering here because if we use non-atomic access,
+        // the compiler might optimize it out
+        mark_word = get_mark_word_relaxed::<VM>(object);
     }
 
-    let mark_word = get_mark_word::<VM>(object);
     if state_is_forwarded(mark_word) {
-       unsafe {
+        unsafe {
             // We use "unchecked" conversion because we guarantee the forwarding pointer we stored
             // previously is from a valid `ObjectReference` which is never zero.
-            ObjectReference::from_raw_address_unchecked(forwarding_ptr)
+            ObjectReference::from_raw_address_unchecked(unsafe {
+                Address::from_usize(
+                    ((mark_word & FORWARDING_POINTER_MASK) << FORWARDING_ADDRESS_SHIFT) as usize,
+                )
+            })
         }
     } else {
         // For some policies (such as Immix), we can have interleaving such that one thread clears
@@ -111,9 +115,27 @@ fn is_marked(mark_word: u32) -> bool {
     (mark_word >> FORWARDING_BIT_SHIFT) & FORWARDING_BIT_MASK == 0b1
 }
 
+/// Return the forwarding bits for a given `ObjectReference`. Note that this function is unsafe as
+/// it uses nonatomic accesses.
+pub unsafe fn get_mark_word_nonatomic<VM: VMBinding>(object: ObjectReference) -> u32 {
+    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load::<VM, u32>(object, None)
+}
+
+fn get_mark_word_relaxed<VM: VMBinding>(object: ObjectReference) -> u32 {
+    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+        object,
+        None,
+        Ordering::Relaxed,
+    )
+}
+
 /// Return the forwarding bits for a given `ObjectReference`.
 pub fn get_mark_word<VM: VMBinding>(object: ObjectReference) -> u32 {
-    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(object, None, Ordering::SeqCst)
+    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+        object,
+        None,
+        Ordering::SeqCst,
+    )
 }
 
 pub fn set_mark_word<VM: VMBinding>(object: ObjectReference, mark_word: u32) {
@@ -150,6 +172,10 @@ pub fn is_forwarded_or_being_forwarded<VM: VMBinding>(object: ObjectReference) -
 
 fn state_is_forwarded(mark_word: u32) -> bool {
     is_marked(mark_word) && ((mark_word << FORWARDING_ADDRESS_SHIFT) != CLAIMED_FORWARDING_POINTER)
+}
+
+fn state_is_being_forwarded(mark_word: u32) -> bool {
+    is_marked(mark_word) && ((mark_word << FORWARDING_ADDRESS_SHIFT) == CLAIMED_FORWARDING_POINTER)
 }
 
 fn state_is_forwarded_or_being_forwarded(mark_word: u32) -> bool {
@@ -230,7 +256,9 @@ pub fn write_forwarding_pointer<VM: VMBinding>(
     trace!("write_forwarding_pointer({}, {})", object, new_object);
     VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
         object,
-        (new_object.to_raw_address().as_usize() >> FORWARDING_ADDRESS_SHIFT).try_into().unwrap(),
+        (new_object.to_raw_address().as_usize() >> FORWARDING_ADDRESS_SHIFT)
+            .try_into()
+            .unwrap(),
         Some(FORWARDING_POINTER_MASK),
         Ordering::SeqCst,
     );
