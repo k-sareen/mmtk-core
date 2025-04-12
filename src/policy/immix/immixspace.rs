@@ -632,14 +632,15 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         #[cfg(feature = "vo_bit")]
         vo_bit::helper::on_trace_object::<VM>(object);
 
-        let forwarding_status = object_forwarding::attempt_to_forward::<VM>(object);
-        if object_forwarding::state_is_forwarded_or_being_forwarded(forwarding_status) {
+        let mark_word = object_forwarding::get_mark_word::<VM>(object);
+        let potential_fwd = object_forwarding::attempt_to_forward::<VM>(object, mark_word);
+        if let Some(_) = potential_fwd {
             // We lost the forwarding race as some other thread has set the forwarding word; wait
             // until the object has been forwarded by the winner. Note that the object may not
             // necessarily get forwarded since Immix opportunistically moves objects.
             #[allow(clippy::let_and_return)]
             let new_object =
-                object_forwarding::spin_and_get_forwarded_object::<VM>(object, forwarding_status);
+                object_forwarding::spin_and_get_forwarded_object::<VM>(object);
             #[cfg(debug_assertions)]
             {
                 if new_object == object {
@@ -663,6 +664,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             // We won the forwarding race but the object is already marked so we clear the
             // forwarding status and return the unmoved object
             object_forwarding::clear_forwarding_bits::<VM>(object);
+            object_forwarding::set_mark_word::<VM>(object, mark_word);
             object
         } else {
             // We won the forwarding race; actually forward and copy the object if it is not pinned
@@ -672,6 +674,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             {
                 self.mark_state.test_and_mark::<VM>(object);
                 object_forwarding::clear_forwarding_bits::<VM>(object);
+                object_forwarding::set_mark_word::<VM>(object, mark_word);
                 Block::containing(object).set_state(BlockState::Marked);
 
                 #[cfg(feature = "vo_bit")]
@@ -689,7 +692,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 // Clippy complains if the "vo_bit" feature is not enabled.
                 #[allow(clippy::let_and_return)]
                 let new_object =
-                    object_forwarding::forward_object::<VM>(object, semantics, copy_context);
+                    object_forwarding::forward_object::<VM>(object, mark_word, semantics, copy_context);
 
                 #[cfg(feature = "vo_bit")]
                 vo_bit::helper::on_object_forwarded::<VM>(new_object);

@@ -601,13 +601,13 @@ pub mod specs {
         (LOG_BITS_IN_BYTE + /* LOG_BYTES_IN_WORD */ 2) as usize,    // 32-bit forwarding pointer
         LOG_MIN_OBJECT_SIZE
     );
-    // Forwarding bits: 2 bits per object, local
+    // Forwarding bits: 1-bit per object, local
     define_vm_metadata_spec!(
-        /// 2-bit local metadata for spaces that store a forwarding state for objects.
-        /// If this spec is defined in the header, it can be defined with a position of the lowest 2 bits in the forwarding pointer.
+        /// 1-bit local metadata for spaces that store a forwarding state for objects.
+        /// If this spec is defined in the header, it can be defined with a position of the lowest 1-bit in the forwarding pointer.
         VMLocalForwardingBitsSpec,
         false,
-        1,
+        0,
         LOG_MIN_OBJECT_SIZE
     );
     // Mark bit: 1 bit per object, local

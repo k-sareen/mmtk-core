@@ -257,19 +257,21 @@ impl<VM: VMBinding> CopySpace<VM> {
         );
 
         trace!("attempting to forward");
-        let forwarding_status = object_forwarding::attempt_to_forward::<VM>(object);
+        let mark_word = object_forwarding::get_mark_word::<VM>(object);
+        let potential_fwd = object_forwarding::attempt_to_forward::<VM>(object, mark_word);
 
         trace!("checking if object is being forwarded");
-        if object_forwarding::state_is_forwarded_or_being_forwarded(forwarding_status) {
+        if let Some(_) = potential_fwd {
             trace!("... yes it is");
             let new_object =
-                object_forwarding::spin_and_get_forwarded_object::<VM>(object, forwarding_status);
+                object_forwarding::spin_and_get_forwarded_object::<VM>(object);
             trace!("Returning");
             new_object
         } else {
             trace!("... no it isn't. Copying");
             let new_object = object_forwarding::forward_object::<VM>(
                 object,
+                mark_word,
                 semantics.unwrap(),
                 worker.get_copy_context_mut(),
             );

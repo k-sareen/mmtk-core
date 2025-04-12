@@ -219,7 +219,7 @@ impl Stats {
         output_string.push_str(
             "\n------------------------------ End MMTk Statistics -----------------------------\n",
         );
-        warn!("{}", output_string);
+        print!("{}", output_string);
     }
 
     pub fn print_column_names(

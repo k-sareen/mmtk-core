@@ -39,6 +39,14 @@ impl MetadataSpec {
         }
     }
 
+    /// Extract HeaderMetadataSpec from a MetadataSpec. Panics if this is not in-header metadata.
+    pub const fn extract_header_spec(&self) -> &HeaderMetadataSpec {
+        match self {
+            MetadataSpec::InHeader(spec) => spec,
+            MetadataSpec::OnSide(_) => panic!("Expected an in-header spec"),
+        }
+    }
+
     /// A function to non-atomically load the specified metadata's content.
     /// Returns the metadata value.
     ///
