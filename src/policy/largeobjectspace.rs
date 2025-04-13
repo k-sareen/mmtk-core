@@ -281,8 +281,8 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
                     self.treadmill.copy(object, nursery_object);
                 }
                 // We just moved the object out of the logical nursery, mark it as unlogged.
-                // We also set the unlog bit for mature objects to ensure that
-                // any modifications to them are logged
+                // We also unlog mature objects as their unlog bit may have been unset before the
+                // full-heap GC
                 if self.common.needs_log_bit {
                     VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
                         .mark_as_unlogged::<VM>(object, Ordering::SeqCst);
@@ -304,9 +304,9 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         let sweep = |object: ObjectReference| {
             #[cfg(feature = "vo_bit")]
             crate::util::metadata::vo_bit::unset_vo_bit(object);
+            // Clear log bits for dead objects to prevent a new nursery object having the unlog bit set
             if self.common.needs_log_bit {
-                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                    .clear::<VM>(object, Ordering::SeqCst);
+                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.clear::<VM>(object, Ordering::SeqCst);
             }
             let start = object.to_object_start::<VM>();
             #[cfg(feature = "poison_on_release")]

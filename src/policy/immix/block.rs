@@ -247,7 +247,11 @@ impl Block {
                     if prev_line_is_marked {
                         holes += 1;
                     }
-
+                    // We need to clear the line mark state at least twice in every 128 GC
+                    // otherwise, the line mark state of the last GC will stick around
+                    if line_mark_state > Line::MAX_MARK_STATE - 2 {
+                        line.mark(0);
+                    }
                     #[cfg(feature = "poison_on_release")]
                     crate::util::memory::set_pattern(line.start(), (0xdeadbeef ^ line.start().as_usize()) & !0xff, Line::BYTES);
 

@@ -29,6 +29,7 @@ use crate::util::heap::chunk_map::*;
 use crate::util::linear_scan::Region;
 use crate::util::VMThread;
 use crate::vm::ObjectModel;
+use crate::vm::Scanning;
 use std::sync::Mutex;
 
 /// The result for `MarkSweepSpace.acquire_block()`. `MarkSweepSpace` will attempt
@@ -347,22 +348,28 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
         }
     }
 
-    pub fn is_marked(&self, object: ObjectReference) -> bool {
-        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst)
+    /// Mark an object non-atomically.  If multiple GC worker threads attempt to mark the same
+    /// object, more than one of them may return `true`.
+    fn attempt_mark_non_atomic(&self, object: ObjectReference) -> bool {
+        if !VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst) {
+            VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.mark::<VM>(object, Ordering::SeqCst);
+            true
+        } else {
+            false
+        }
     }
 
-    fn is_object_in_nursery(&self, object: ObjectReference) -> bool {
-        self.in_space(object) && !self.is_marked(object)
-    }
+    /// Mark an object atomically.
+    fn attempt_mark_atomic(&self, object: ObjectReference) -> bool {
+        let mark_state = 1u8;
 
-    fn test_and_mark(&self, object: ObjectReference) -> bool {
         loop {
             let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
                 object,
                 None,
                 Ordering::SeqCst,
             );
-            if old_value == 1 {
+            if old_value == mark_state {
                 return false;
             }
 
@@ -370,7 +377,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 .compare_exchange_metadata::<VM, u8>(
                     object,
                     old_value,
-                    1,
+                    mark_state,
                     None,
                     Ordering::SeqCst,
                     Ordering::SeqCst,
@@ -381,6 +388,24 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             }
         }
         true
+    }
+
+    /// Mark an object.  Return `true` if the object is newly marked.  Return `false` if the object
+    /// was already marked.
+    fn attempt_mark(&self, object: ObjectReference) -> bool {
+        if VM::VMScanning::UNIQUE_OBJECT_ENQUEUING {
+            self.attempt_mark_atomic(object)
+        } else {
+            self.attempt_mark_non_atomic(object)
+        }
+    }
+
+    pub fn is_marked(&self, object: ObjectReference) -> bool {
+        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst)
+    }
+
+    fn is_object_in_nursery(&self, object: ObjectReference) -> bool {
+        self.in_space(object) && !self.is_marked(object)
     }
 
     fn trace_object<Q: ObjectQueue>(
@@ -394,7 +419,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             object,
         );
 
-        if self.test_and_mark(object) {
+        if self.attempt_mark(object) {
             let block = Block::containing(object);
             block.set_state(BlockState::Marked);
             debug_assert!(
@@ -456,8 +481,6 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 for chunk in self.chunk_map.all_chunks() {
                     side.bzero_metadata(chunk.start(), Chunk::BYTES);
                 }
-            } else {
-                unimplemented!("in header log bit is not supported");
             }
         }
 
