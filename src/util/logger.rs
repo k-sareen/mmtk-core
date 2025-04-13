@@ -19,7 +19,7 @@ use android_logger::Config;
 use std::env;
 
 /// Attempt to init a logger for MMTk.
-pub fn try_init() -> Result<(), SetLoggerError> {
+pub fn try_init() {
     env::set_var("RUST_BACKTRACE", "1");
     #[cfg(target_os = "android")]
     {
@@ -33,7 +33,6 @@ pub fn try_init() -> Result<(), SetLoggerError> {
                 .with_max_level(log::LevelFilter::Info)
                 .with_tag(tag),
         );
-        return Ok(());
     }
     #[cfg(not(target_os = "android"))]
     {
