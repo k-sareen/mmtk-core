@@ -30,6 +30,7 @@ rust_library {
         "perf_counter",
         "eager_sweeping",
         "object_pinning",
+        "builtin_env_logger",    // This is technically only used by the x86_64 headless build
         "set_unlog_bits_vm_space",
         // "sanity",             // debug only
         "poison_on_release",  // debug only
