@@ -178,14 +178,12 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
         let immix_space_args = if args.constraints.needs_log_bit {
             ImmixSpaceArgs {
                 unlog_object_when_traced: true,
-                reset_log_bit_in_major_gc: true,
                 #[cfg(feature = "vo_bit")]
                 mixed_age: false,
             }
         } else {
             ImmixSpaceArgs {
                 unlog_object_when_traced: false,
-                reset_log_bit_in_major_gc: false,
                 #[cfg(feature = "vo_bit")]
                 mixed_age: false,
             }
@@ -445,15 +443,10 @@ impl<VM: VMBinding> ClearZygoteMetadata<VM> {
                 continue;
             } else {
                 self.space.mark_state.on_block_reset::<VM>(block.start(), Block::BYTES);
-                if self.space.space_args.reset_log_bit_in_major_gc {
+                if self.space.common().needs_log_bit {
                     if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
                         // We zero all the log bits in major GC, and for every object we trace, we will mark the log bit again.
                         side.bzero_metadata(block.start(), Block::BYTES);
-                    } else {
-                        // If the log bit is not in side metadata, we cannot bulk zero. We can either
-                        // clear the bit for dead objects in major GC, or clear the log bit for new
-                        // objects. In either cases, we do not need to set log bit at tracing.
-                        unimplemented!("We cannot bulk zero unlogged bit.")
                     }
                 }
                 // If the forwarding bits are on the side, we need to clear them, too.

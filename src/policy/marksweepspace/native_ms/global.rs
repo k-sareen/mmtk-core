@@ -454,7 +454,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             trace!("MarkSweep mature object {}, skip", object);
             object
         } else {
-            if self.test_and_mark(object) {
+            if self.attempt_mark(object) {
                 trace!("MarkSweep nursery object {}, tracing", object);
                 let block = Block::containing(object);
                 block.set_state(BlockState::Marked);
