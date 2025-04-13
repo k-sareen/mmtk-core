@@ -291,7 +291,19 @@ impl<VM: VMBinding> VMSpace<VM> {
         }
     }
 
-    pub fn prepare(&mut self, _major_gc: bool) {}
+    pub fn prepare(&mut self, major_gc: bool) {
+        if major_gc {
+            if self.common.needs_log_bit {
+                // XXX(kunals): Have to set the log bit for the entire VM space for major GCs since
+                // we don't trace and hence mark objects as unlogged anymore. This might be a bit
+                // inefficient. We could potentially set the bits for objects by checking in the
+                // ProcessVmSpaceObjects work packet.
+                if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
+                    side.bset_metadata(self.start, self.size);
+                }
+            }
+        }
+    }
 
     pub fn release(&mut self) {}
 
