@@ -860,6 +860,8 @@ options! {
     /// Enable transparent hugepage support for MMTk spaces via madvise (only Linux is supported)
     /// This only affects the memory for MMTk spaces.
     transparent_hugepages: bool                  [env_var: true, command_line: true]  [|v: &bool| !v || cfg!(target_os = "linux")] = false,
+    /// Count live bytes for objects in each space during a GC.
+    count_live_bytes_in_gc: bool                 [env_var: true, command_line: true] [always_valid] = false,
     /// Is the current runtime the Zygote process? Note that this value is only used once at the start
     /// when creating the [`MMTK`] instance and is not maintained. The correct up-to-date value is
     /// always in [`GlobalState`].
