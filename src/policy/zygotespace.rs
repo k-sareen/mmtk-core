@@ -48,7 +48,7 @@ pub struct ZygoteSpace<VM: VMBinding> {
 unsafe impl<VM: VMBinding> Sync for ZygoteSpace<VM> {}
 
 impl<VM: VMBinding> SFT for ZygoteSpace<VM> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         self.get_name()
     }
 
@@ -345,7 +345,7 @@ impl<VM: VMBinding> Space<VM> for Option<ZygoteSpace<VM>> {
 }
 
 impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         self.as_ref().unwrap().get_name()
     }
 

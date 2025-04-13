@@ -16,7 +16,7 @@ use crate::util::heap::layout::heap_parameters::MAX_SPACES;
 use crate::util::heap::layout::vm_layout::VMLayout;
 use crate::util::heap::layout::{self, Mmapper, VMMap};
 use crate::util::heap::HeapMeta;
-use crate::util::memory::MmapStrategy;
+use crate::util::memory::{MmapAnnotation, MmapStrategy};
 use crate::util::opaque_pointer::*;
 use crate::util::options::{Options, PlanSelector};
 use crate::util::reference_processor::ReferenceProcessors;
@@ -220,8 +220,14 @@ impl<VM: VMBinding> MMTK<VM> {
         use crate::util::constants::LOG_BYTES_IN_PAGE;
         use crate::util::heap::layout::vm_layout::vm_layout;
         let heap_pages = (vm_layout().heap_end - vm_layout().heap_start) >> LOG_BYTES_IN_PAGE;
-        let quarantine_strategy = MmapStrategy::new(false, crate::util::memory::MmapProtection::NoAccess);
-        MMAPPER.quarantine_address_range(vm_layout().heap_start, heap_pages, quarantine_strategy);
+        let quarantine_strategy =
+            MmapStrategy::new(false, crate::util::memory::MmapProtection::NoAccess);
+        MMAPPER.quarantine_address_range(
+            vm_layout().heap_start,
+            heap_pages,
+            quarantine_strategy,
+            &MmapAnnotation::Misc { name: "quarantined" },
+        );
 
         // XXX(kunals): If we are using NoGC then mmap and zero the entire space. This means that
         // each page in the heap has been touched at least once and hence the mutator should not
@@ -232,7 +238,12 @@ impl<VM: VMBinding> MMTK<VM> {
                 *options.transparent_hugepages,
                 crate::util::memory::MmapProtection::ReadWrite,
             );
-            MMAPPER.ensure_mapped(vm_layout().heap_start, heap_pages, nogc_strategy);
+            MMAPPER.ensure_mapped(
+                vm_layout().heap_start,
+                heap_pages,
+                nogc_strategy,
+                &MmapAnnotation::Space { name: "immortal" },
+            );
             crate::util::memory::zero(vm_layout().heap_start, heap_pages << LOG_BYTES_IN_PAGE);
         }
 
@@ -360,17 +371,18 @@ impl<VM: VMBinding> MMTK<VM> {
 
     #[cfg(feature = "perf_counter")]
     pub fn create_perf_counters(&self) {
-        debug_assert!(!self.is_zygote_process(), "Can't create perf counters for the Zygote!");
+        debug_assert!(
+            !self.is_zygote_process(),
+            "Can't create perf counters for the Zygote!"
+        );
         // XXX(kunals): We need to guard this with a compare-exchange because for command-line runs
         // we end up calling `create_perf_counters` twice:
         //   1. Inside `initialize_collection`
         //   2. Inside `Runtime::InitNonZygoteOrPostFork`
-        if self.perf_counters_created.compare_exchange(
-            false,
-            true,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ).is_ok()
+        if self
+            .perf_counters_created
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
         {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
@@ -515,7 +527,8 @@ impl<VM: VMBinding> MMTK<VM> {
     }
 
     pub fn set_is_pre_first_zygote_fork_gc(&self, is_pre_first_zygote_fork_gc: bool) {
-        self.state.set_is_pre_first_zygote_fork_gc(is_pre_first_zygote_fork_gc)
+        self.state
+            .set_is_pre_first_zygote_fork_gc(is_pre_first_zygote_fork_gc)
     }
 
     pub fn is_jank_perceptible(&self) -> bool {
@@ -600,10 +613,7 @@ impl<VM: VMBinding> MMTK<VM> {
     ///
     /// Arguments:
     /// * `tls`: The thread that triggers this collection request.
-    pub fn handle_pre_first_zygote_fork_collection_request(
-        &self,
-        tls: VMMutatorThread
-    ) {
+    pub fn handle_pre_first_zygote_fork_collection_request(&self, tls: VMMutatorThread) {
         use crate::vm::Collection;
         if !self.get_plan().constraints().collects_garbage {
             warn!("User attempted a collection request, but the plan can not do GC. The request is ignored.");
@@ -614,7 +624,9 @@ impl<VM: VMBinding> MMTK<VM> {
             gen.force_full_heap_collection();
         }
 
-        self.state.user_triggered_collection.store(true, Ordering::Relaxed);
+        self.state
+            .user_triggered_collection
+            .store(true, Ordering::Relaxed);
 
         // Inform MMTk that this is the pre-first Zygote fork GC
         self.set_is_pre_first_zygote_fork_gc(true);
