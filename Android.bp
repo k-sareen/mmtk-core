@@ -21,7 +21,7 @@ rust_library {
     prefer_rlib: true,
     crate_name: "mmtk",
     cargo_env_compat: true,
-    cargo_pkg_version: "0.29.0",
+    cargo_pkg_version: "0.30.0",
     srcs: ["src/lib.rs"],
     edition: "2021",
     features: [
@@ -110,7 +110,7 @@ rust_proc_macro {
     name: "libmmtk_macros",
     crate_name: "mmtk_macros",
     cargo_env_compat: true,
-    cargo_pkg_version: "0.29.0",
+    cargo_pkg_version: "0.30.0",
     srcs: ["macros/src/lib.rs"],
     edition: "2021",
     rustlibs: [
