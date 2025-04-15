@@ -35,27 +35,43 @@ pub fn attempt_to_forward<VM: VMBinding>(
     mark_word: u32,
 ) -> Option<ObjectReference> {
     let mut old_mark = mark_word;
-    while !is_marked(old_mark) {
-        match VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.compare_exchange_metadata::<VM, u32>(
-            object,
-            old_mark,
-            (0b1 << FORWARDING_BIT_SHIFT)
-                | (CLAIMED_FORWARDING_POINTER >> FORWARDING_ADDRESS_SHIFT),
-            None,
-            Ordering::SeqCst,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => {
-                return None;
-            }
-            Err(new_mark) => {
-                // Failed the race, but we need to check if it has been marked
-                old_mark = new_mark;
+    if cfg!(not(feature = "single_worker")) {
+        while !is_marked(old_mark) {
+            match VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.compare_exchange_metadata::<VM, u32>(
+                object,
+                old_mark,
+                (0b1 << FORWARDING_BIT_SHIFT)
+                    | (CLAIMED_FORWARDING_POINTER >> FORWARDING_ADDRESS_SHIFT),
+                None,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    return None;
+                }
+                Err(new_mark) => {
+                    // Failed the race, but we need to check if it has been marked
+                    old_mark = new_mark;
+                }
             }
         }
-    }
 
-    Some(read_forwarding_pointer::<VM>(object))
+        Some(read_forwarding_pointer::<VM>(object))
+    } else {
+        if !is_marked(mark_word) {
+            unsafe {
+                VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store::<VM, u32>(
+                    object,
+                    (0b1 << FORWARDING_BIT_SHIFT)
+                        | (CLAIMED_FORWARDING_POINTER >> FORWARDING_ADDRESS_SHIFT),
+                    None,
+                )
+            }
+            None
+        } else {
+            Some(read_forwarding_pointer::<VM>(object))
+        }
+    }
 }
 
 /// Spin-wait for the object's forwarding to become complete and then read the forwarding pointer to the new object.
@@ -69,13 +85,42 @@ pub fn attempt_to_forward<VM: VMBinding>(
 ///
 pub fn spin_and_get_forwarded_object<VM: VMBinding>(object: ObjectReference) -> ObjectReference {
     let mut mark_word = unsafe { get_mark_word_nonatomic::<VM>(object) };
-    while state_is_being_forwarded(mark_word) {
-        // XXX(kunals): Need to use relaxed ordering here because if we use non-atomic access,
-        // the compiler might optimize it out
-        mark_word = get_mark_word_relaxed::<VM>(object);
-    }
+    if cfg!(not(feature = "single_worker")) {
+        while state_is_being_forwarded(mark_word) {
+            // XXX(kunals): Need to use relaxed ordering here because if we use non-atomic access,
+            // the compiler might optimize it out
+            mark_word = get_mark_word_relaxed::<VM>(object);
+        }
 
-    if state_is_forwarded(mark_word) {
+        if state_is_forwarded(mark_word) {
+            unsafe {
+                // We use "unchecked" conversion because we guarantee the forwarding pointer we stored
+                // previously is from a valid `ObjectReference` which is never zero.
+                ObjectReference::from_raw_address_unchecked(unsafe {
+                    Address::from_usize(
+                        ((mark_word & FORWARDING_POINTER_MASK) << FORWARDING_ADDRESS_SHIFT) as usize,
+                    )
+                })
+            }
+        } else {
+            // For some policies (such as Immix), we can have interleaving such that one thread clears
+            // the forwarding word while another thread was stuck spinning in the above loop.
+            // See: https://github.com/mmtk/mmtk-core/issues/579
+            debug_assert!(
+                !state_is_forwarded_or_being_forwarded(mark_word),
+                "Invalid/Corrupted mark word {:x} for object {}",
+                mark_word,
+                object,
+            );
+            object
+        }
+    } else {
+        debug_assert!(
+            !state_is_being_forwarded(mark_word),
+            "Invalid/Corrupted mark word {:x} for object {}",
+            mark_word,
+            object,
+        );
         unsafe {
             // We use "unchecked" conversion because we guarantee the forwarding pointer we stored
             // previously is from a valid `ObjectReference` which is never zero.
@@ -85,17 +130,6 @@ pub fn spin_and_get_forwarded_object<VM: VMBinding>(object: ObjectReference) -> 
                 )
             })
         }
-    } else {
-        // For some policies (such as Immix), we can have interleaving such that one thread clears
-        // the forwarding word while another thread was stuck spinning in the above loop.
-        // See: https://github.com/mmtk/mmtk-core/issues/579
-        debug_assert!(
-            !state_is_forwarded_or_being_forwarded(mark_word),
-            "Invalid/Corrupted mark word {:x} for object {}",
-            mark_word,
-            object,
-        );
-        object
     }
 }
 
@@ -140,38 +174,65 @@ pub unsafe fn get_mark_word_nonatomic<VM: VMBinding>(object: ObjectReference) ->
 }
 
 fn get_mark_word_relaxed<VM: VMBinding>(object: ObjectReference) -> u32 {
-    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
-        object,
-        None,
-        Ordering::Relaxed,
-    )
+    if cfg!(feature = "single_worker") {
+        return unsafe { get_mark_word_nonatomic::<VM>(object) };
+    } else {
+        VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+            object,
+            None,
+            Ordering::Relaxed,
+        )
+    }
 }
 
 /// Return the forwarding bits for a given `ObjectReference`.
 pub fn get_mark_word<VM: VMBinding>(object: ObjectReference) -> u32 {
-    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
-        object,
-        None,
-        Ordering::SeqCst,
-    )
+    if cfg!(feature = "single_worker") {
+        return unsafe { get_mark_word_nonatomic::<VM>(object) };
+    } else {
+        VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+            object,
+            None,
+            Ordering::SeqCst,
+        )
+    }
 }
 
 pub fn set_mark_word<VM: VMBinding>(object: ObjectReference, mark_word: u32) {
-    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
-        object,
-        mark_word,
-        None,
-        Ordering::SeqCst,
-    )
+    if cfg!(feature = "single_worker") {
+        unsafe {
+            VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store::<VM, u32>(
+                object,
+                mark_word,
+                None,
+            )
+        }
+    } else {
+        VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
+            object,
+            mark_word,
+            None,
+            Ordering::SeqCst,
+        )
+    }
 }
 
 /// Return the forwarding bits for a given `ObjectReference`.
 pub fn get_forwarding_status<VM: VMBinding>(object: ObjectReference) -> u8 {
-    VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.load_atomic::<VM, u8>(
-        object,
-        None,
-        Ordering::SeqCst,
-    )
+    if cfg!(feature = "single_worker") {
+        unsafe {
+            VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.load::<VM, u8>(
+                object,
+                None,
+            )
+        }
+    } else {
+        VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.load_atomic::<VM, u8>(
+            object,
+            None,
+            Ordering::SeqCst,
+        )
+    }
 }
 
 pub fn is_forwarded<VM: VMBinding>(object: ObjectReference) -> bool {
@@ -203,12 +264,22 @@ fn state_is_forwarded_or_being_forwarded(mark_word: u32) -> bool {
 /// Zero the forwarding bits of an object.
 /// This function is used on new objects.
 pub fn clear_forwarding_bits<VM: VMBinding>(object: ObjectReference) {
-    VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.store_atomic::<VM, u8>(
-        object,
-        0,
-        None,
-        Ordering::SeqCst,
-    )
+    if cfg!(feature = "single_worker") {
+        unsafe {
+            VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.store::<VM, u8>(
+                object,
+                0,
+                None,
+            )
+        }
+    } else {
+        VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.store_atomic::<VM, u8>(
+            object,
+            0,
+            None,
+            Ordering::SeqCst,
+        )
+    }
 }
 
 /// Read the forwarding pointer of an object.
@@ -224,14 +295,24 @@ pub fn read_forwarding_pointer<VM: VMBinding>(object: ObjectReference) -> Object
     unsafe {
         // We use "unchecked" convertion becasue we guarantee the forwarding pointer we stored
         // previously is from a valid `ObjectReference` which is never zero.
-        ObjectReference::from_raw_address_unchecked(crate::util::Address::from_usize(
-            (VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
-                object,
-                Some(FORWARDING_POINTER_MASK),
-                Ordering::SeqCst,
-            ) as usize)
-                << FORWARDING_ADDRESS_SHIFT,
-        ))
+        if cfg!(not(feature = "single_worker")) {
+            ObjectReference::from_raw_address_unchecked(crate::util::Address::from_usize(
+                (VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+                    object,
+                    Some(FORWARDING_POINTER_MASK),
+                    Ordering::SeqCst,
+                ) as usize)
+                    << FORWARDING_ADDRESS_SHIFT,
+            ))
+        } else {
+            ObjectReference::from_raw_address_unchecked(crate::util::Address::from_usize(
+                (VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load::<VM, u32>(
+                    object,
+                    Some(FORWARDING_POINTER_MASK),
+                ) as usize)
+                    << FORWARDING_ADDRESS_SHIFT,
+            ))
+        }
     }
 }
 
@@ -247,14 +328,24 @@ pub fn read_potential_forwarding_pointer<VM: VMBinding>(object: ObjectReference)
 
     // We write the forwarding poiner. We know it is an object reference.
     unsafe {
-        crate::util::Address::from_usize(
-            (VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
-                object,
-                Some(FORWARDING_POINTER_MASK),
-                Ordering::SeqCst,
-            ) as usize)
-                << FORWARDING_ADDRESS_SHIFT,
-        )
+        if cfg!(not(feature = "single_worker")) {
+            crate::util::Address::from_usize(
+                (VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load_atomic::<VM, u32>(
+                    object,
+                    Some(FORWARDING_POINTER_MASK),
+                    Ordering::SeqCst,
+                ) as usize)
+                    << FORWARDING_ADDRESS_SHIFT,
+            )
+        } else {
+            crate::util::Address::from_usize(
+                (VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.load::<VM, u32>(
+                    object,
+                    Some(FORWARDING_POINTER_MASK),
+                ) as usize)
+                    << FORWARDING_ADDRESS_SHIFT,
+            )
+        }
     }
 }
 
@@ -272,14 +363,26 @@ pub fn write_forwarding_pointer<VM: VMBinding>(
     );
 
     trace!("write_forwarding_pointer({}, {})", object, new_object);
-    VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
-        object,
-        (new_object.to_raw_address().as_usize() >> FORWARDING_ADDRESS_SHIFT)
-            .try_into()
-            .unwrap(),
-        Some(FORWARDING_POINTER_MASK),
-        Ordering::SeqCst,
-    );
+    if cfg!(not(feature = "single_worker")) {
+        VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store_atomic::<VM, u32>(
+            object,
+            (new_object.to_raw_address().as_usize() >> FORWARDING_ADDRESS_SHIFT)
+                .try_into()
+                .unwrap(),
+            Some(FORWARDING_POINTER_MASK),
+            Ordering::SeqCst,
+        );
+    } else {
+        unsafe {
+            VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC.store::<VM, u32>(
+                object,
+                (new_object.to_raw_address().as_usize() >> FORWARDING_ADDRESS_SHIFT)
+                    .try_into()
+                    .unwrap(),
+                Some(FORWARDING_POINTER_MASK),
+            );
+        }
+    }
 
     debug_assert!(
         is_forwarded::<VM>(object),
