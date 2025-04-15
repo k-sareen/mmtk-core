@@ -98,6 +98,7 @@ where
         let mut closure = STObjectGraphTraversalClosure::<VM, P, DEFAULT_TRACE>::new(mmtk, worker);
         STStopMutators::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpecificRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
+        STScanVMSpaceObjects::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
         // We implicitly resume mutators in Scheduler::on_gc_finished so we don't have a separate
         // implementation for that
@@ -383,5 +384,38 @@ where
         probe!(mmtk, scan_and_process_vm_roots_start);
         <VM as VMBinding>::VMScanning::single_threaded_scan_vm_specific_roots(worker.tls, closure);
         probe!(mmtk, scan_and_process_vm_roots_end);
+    }
+}
+
+pub(crate) struct STScanVMSpaceObjects<
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM>,
+    const KIND: TraceKind,
+> {
+    phantom: PhantomData<(VM, P)>,
+}
+
+impl<VM, P, const KIND: TraceKind> STScanVMSpaceObjects<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM>,
+{
+    pub fn new() -> Self {
+        Self { phantom: PhantomData }
+    }
+
+    pub fn execute(
+        &self,
+        closure: &mut STObjectGraphTraversalClosure<VM, P, KIND>,
+        worker: &mut GCWorker<VM>,
+        _mmtk: &'static MMTK<VM>,
+    ) {
+        probe!(mmtk, scan_vm_space_objects_start);
+        let mut scan_closure = |objects: Vec<ObjectReference>| {
+            let mut work_packet = ScanObjects::<E>::new(objects, false, WorkBucketStage::Closure);
+            worker.add_work(WorkBucketStage::Closure, work_packet);
+        };
+        <VM as VMBinding>::VMScanning::scan_vm_space_objects(worker.tls, closure);
+        probe!(mmtk, scan_vm_space_objects_end);
     }
 }
