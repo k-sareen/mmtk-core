@@ -367,14 +367,22 @@ impl AffinityKind {
     /// maximum number of cores allocated to the program. Assumes core ids on the system are
     /// 0-indexed.
     pub fn validate(&self) -> bool {
-        let num_cpu = get_total_num_cpus();
+        if cfg!(target_os = "linux") {
+            let num_cpu = get_total_num_cpus();
 
-        if let AffinityKind::RoundRobin(cpuset) = self {
-            for cpu in cpuset {
-                if cpu >= &num_cpu {
-                    return false;
+            if let AffinityKind::RoundRobin(cpuset) = self {
+                for cpu in cpuset {
+                    if cpu >= &num_cpu {
+                        return false;
+                    }
                 }
             }
+
+            return true;
+        } else if cfg!(target_os = "android") {
+            // XXX(kunals): Doesn't seem like Android works with the above logic. We need to specify
+            // the actual core ID to get the affinity mask to work. Hence, always return true
+            return true;
         }
 
         true
