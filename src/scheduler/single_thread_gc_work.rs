@@ -99,6 +99,7 @@ where
         STStopMutators::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpecificRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpaceObjects::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
+        STProcessWeakReferences::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
         // We implicitly resume mutators in Scheduler::on_gc_finished so we don't have a separate
         // implementation for that
@@ -261,6 +262,10 @@ where
         unsafe { &mut *self.worker }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.slots.is_empty()
+    }
+
     fn process_slot(&mut self, slot: VM::VMSlot) {
         let Some(object) = slot.load() else { return };
         let new_object = self.plan.trace_object::<_, KIND>(self, object, self.worker());
@@ -269,7 +274,7 @@ where
         }
     }
 
-    fn traverse_from_roots(&mut self) {
+    pub fn process_slots(&mut self) {
         while let Some(slot) = self.slots.pop() {
             self.process_slot(slot);
         }
@@ -293,6 +298,24 @@ where
     }
 }
 
+impl<VM, P, const KIND: TraceKind> ObjectTracer
+    for STObjectGraphTraversalClosure<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM>,
+{
+    /// Forward the `trace_object` call to the underlying `ProcessEdgesWork`,
+    /// and flush as soon as the underlying buffer of `process_edges_work` is full.
+    fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
+        debug_assert!(
+            <VM as VMBinding>::VMObjectModel::is_object_sane(object),
+            "Object {:?} is not sane!",
+            object,
+        );
+        self.plan.trace_object::<_, KIND>(self, object, self.worker())
+    }
+}
+
 impl<VM, P, const KIND: TraceKind> ObjectGraphTraversal<VM::VMSlot>
     for &mut STObjectGraphTraversalClosure<VM, P, KIND>
 where
@@ -302,7 +325,7 @@ where
     fn report_roots(&mut self, root_slots: Vec<VM::VMSlot>) {
         assert!(self.slots.is_empty());
         self.slots = Vec::from(root_slots);
-        self.traverse_from_roots();
+        self.process_slots();
     }
 }
 
@@ -411,11 +434,95 @@ where
         _mmtk: &'static MMTK<VM>,
     ) {
         probe!(mmtk, scan_vm_space_objects_start);
+        debug_assert!(closure.is_empty());
         let mut scan_closure = |objects: Vec<ObjectReference>| {
-            let mut work_packet = ScanObjects::<E>::new(objects, false, WorkBucketStage::Closure);
-            worker.add_work(WorkBucketStage::Closure, work_packet);
+            for object in objects {
+                closure.enqueue(object);
+            }
+            closure.process_slots();
         };
-        <VM as VMBinding>::VMScanning::scan_vm_space_objects(worker.tls, closure);
+        <VM as VMBinding>::VMScanning::scan_vm_space_objects(worker.tls, scan_closure);
         probe!(mmtk, scan_vm_space_objects_end);
+    }
+}
+
+pub(crate) struct STTracerContext<
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
+    const KIND: TraceKind,
+> {
+    phantom: PhantomData<(VM, P)>,
+}
+
+impl<VM, P, const KIND: TraceKind> STTracerContext<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
+{
+    pub fn new() -> Self {
+        Self { phantom: PhantomData }
+    }
+}
+
+impl<VM, P, const KIND: TraceKind> ObjectTracerContext<VM> for STTracerContext<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
+{
+    type TracerType = STObjectGraphTraversalClosure<VM, P, KIND>;
+
+    fn with_tracer<R, F>(&self, worker: &mut GCWorker<VM>, func: F) -> R
+    where
+        F: FnOnce(&mut Self::TracerType) -> R,
+    {
+        let mmtk = worker.mmtk;
+        let mut closure = STObjectGraphTraversalClosure::<VM, P, KIND>::new(mmtk, worker);
+        let result = func(&mut closure);
+        closure.process_slots();
+        result
+    }
+}
+
+impl<VM, P, const KIND: TraceKind> Clone for STTracerContext<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
+{
+    fn clone(&self) -> Self {
+        Self { ..*self }
+    }
+}
+
+pub(crate) struct STProcessWeakReferences<
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
+    const KIND: TraceKind,
+> {
+    phantom: PhantomData<(VM, P)>,
+}
+
+impl<VM, P, const KIND: TraceKind> STProcessWeakReferences<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
+{
+    pub fn new() -> Self {
+        Self { phantom: PhantomData }
+    }
+
+    pub fn execute(
+        &self,
+        _closure: &mut STObjectGraphTraversalClosure<VM, P, KIND>,
+        worker: &mut GCWorker<VM>,
+        _mmtk: &'static MMTK<VM>,
+    ) {
+        probe!(mmtk, process_weak_references_start);
+        debug_assert!(_closure.is_empty());
+        let mut need_to_repeat = true;
+        while need_to_repeat {
+            let tracer_factory = STTracerContext::<VM, P, KIND>::new();
+            need_to_repeat = <VM as VMBinding>::VMScanning::process_weak_refs(worker, tracer_factory);
+        }
+        probe!(mmtk, process_weak_references_end);
     }
 }
