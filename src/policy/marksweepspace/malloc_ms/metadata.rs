@@ -187,13 +187,13 @@ pub(super) fn compare_exchange_set_page_mark(page_addr: Address) -> bool {
     // The spec has 1 byte per each page. So it won't be the case that other threads may race and access other bits for the spec.
     // If the compare-exchange fails, we know the byte was set to 1 before this call.
     ACTIVE_PAGE_METADATA_SPEC
-        .compare_exchange_atomic::<u8>(page_addr, 0, 1, Ordering::SeqCst, Ordering::SeqCst)
+        .compare_exchange_atomic::<u8>(page_addr, 0, 1, Ordering::Relaxed, Ordering::Relaxed)
         .is_ok()
 }
 
 #[allow(unused)]
 pub(super) fn is_page_marked(page_addr: Address) -> bool {
-    ACTIVE_PAGE_METADATA_SPEC.load_atomic::<u8>(page_addr, Ordering::SeqCst) == 1
+    ACTIVE_PAGE_METADATA_SPEC.load_atomic::<u8>(page_addr, Ordering::Relaxed) == 1
 }
 
 #[allow(unused)]
@@ -215,7 +215,7 @@ pub(super) fn is_chunk_mapped(chunk_start: Address) -> bool {
 }
 
 pub fn is_chunk_marked(chunk_start: Address) -> bool {
-    ACTIVE_CHUNK_METADATA_SPEC.load_atomic::<u8>(chunk_start, Ordering::SeqCst) == 1
+    ACTIVE_CHUNK_METADATA_SPEC.load_atomic::<u8>(chunk_start, Ordering::Relaxed) == 1
 }
 
 pub unsafe fn is_chunk_marked_unsafe(chunk_start: Address) -> bool {
@@ -237,11 +237,11 @@ pub fn unset_vo_bit(object: ObjectReference) {
 
 #[allow(unused)]
 pub(super) fn set_page_mark(page_addr: Address) {
-    ACTIVE_PAGE_METADATA_SPEC.store_atomic::<u8>(page_addr, 1, Ordering::SeqCst);
+    ACTIVE_PAGE_METADATA_SPEC.store_atomic::<u8>(page_addr, 1, Ordering::Relaxed);
 }
 
 pub(super) fn set_chunk_mark(chunk_start: Address) {
-    ACTIVE_CHUNK_METADATA_SPEC.store_atomic::<u8>(chunk_start, 1, Ordering::SeqCst);
+    ACTIVE_CHUNK_METADATA_SPEC.store_atomic::<u8>(chunk_start, 1, Ordering::Relaxed);
 }
 
 /// Is this allocation an offset malloc? The argument address should be the allocation address (object start)
@@ -251,7 +251,7 @@ pub(super) fn is_offset_malloc(address: Address) -> bool {
 
 /// Set the offset bit for the allocation. The argument address should be the allocation address (object start)
 pub(super) fn set_offset_malloc_bit(address: Address) {
-    OFFSET_MALLOC_METADATA_SPEC.store_atomic::<u8>(address, 1, Ordering::SeqCst);
+    OFFSET_MALLOC_METADATA_SPEC.store_atomic::<u8>(address, 1, Ordering::Relaxed);
 }
 
 /// Unset the offset bit for the allocation. The argument address should be the allocation address (object start)

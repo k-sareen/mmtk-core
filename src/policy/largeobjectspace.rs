@@ -265,8 +265,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             object
         );
         let nursery_object = self.is_in_nursery(object);
-        let is_zygote_object = self.has_zygote_space()
-            && self.treadmill.is_zygote_object(object);
+        let is_zygote_object = self.has_zygote_space() && self.treadmill.is_zygote_object(object);
         trace!(
             "LOS object {} {} a nursery object",
             object,
@@ -285,7 +284,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
                 // full-heap GC
                 if self.common.needs_log_bit {
                     VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                        .mark_as_unlogged::<VM>(object, Ordering::SeqCst);
+                        .mark_as_unlogged::<VM>(object, Ordering::Relaxed);
                 }
                 if !is_zygote_object || (!self.in_nursery_gc && is_zygote_object) {
                     queue.enqueue(object);
@@ -306,13 +305,12 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             crate::util::metadata::vo_bit::unset_vo_bit(object);
             // Clear log bits for dead objects to prevent a new nursery object having the unlog bit set
             if self.common.needs_log_bit {
-                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.clear::<VM>(object, Ordering::SeqCst);
+                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.clear::<VM>(object, Ordering::Relaxed);
             }
             let start = object.to_object_start::<VM>();
             #[cfg(feature = "poison_on_release")]
             crate::util::memory::set(start, 0xed, VM::VMObjectModel::get_current_size(object));
-            self.pr
-                .release_pages(get_super_page(start));
+            self.pr.release_pages(get_super_page(start));
         };
 
         for object in self.treadmill.collect_nursery() {
@@ -327,7 +325,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
     }
 
     pub fn enumerate_large_objects(&self) -> Vec<crate::util::ObjectReference> {
-       self.treadmill.enumerate_large_objects()
+        self.treadmill.enumerate_large_objects()
     }
 
     /// Allocate an object
@@ -349,7 +347,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             let old_value = VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
                 object,
                 None,
-                Ordering::SeqCst,
+                Ordering::Relaxed,
             );
             let mark_bit = old_value & mask;
             if mark_bit == value {
@@ -362,8 +360,8 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
                     old_value,
                     old_value & !LOS_BIT_MASK | value,
                     None,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
                 )
                 .is_ok()
             {
@@ -377,7 +375,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
             object,
             None,
-            Ordering::SeqCst,
+            Ordering::Relaxed,
         ) & MARK_BIT
             == value
     }

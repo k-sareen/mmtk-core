@@ -4,9 +4,9 @@ use crate::plan::global::CreateGeneralPlanArgs;
 use crate::plan::global::CreateSpecificPlanArgs;
 use crate::plan::immix;
 use crate::plan::PlanConstraints;
-use crate::policy::gc_work::DEFAULT_TRACE;
 use crate::policy::gc_work::PolicyTraceObject;
 use crate::policy::gc_work::TraceKind;
+use crate::policy::gc_work::DEFAULT_TRACE;
 use crate::policy::gc_work::TRACE_KIND_TRANSITIVE_PIN;
 use crate::policy::immix::ImmixSpace;
 use crate::policy::immix::PREFER_COPY_ON_NURSERY_GC;
@@ -72,7 +72,10 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
                 } else {
                     // We are the Zygote process and we have not created the ZygoteSpace yet so use
                     // the ImmixSpace inside the ZygoteSpace
-                    vec.push((CopySelector::Immix(0), self.common().get_zygote().get_immix_space()));
+                    vec.push((
+                        CopySelector::Immix(0),
+                        self.common().get_zygote().get_immix_space(),
+                    ));
                 }
                 vec
             },
@@ -92,9 +95,8 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         if unlikely(self.common().is_zygote()) {
             // We are the Zygote process and we have not created the ZygoteSpace yet so use the
             // ImmixSpace inside the ZygoteSpace
-            unsafe {
-                worker.get_copy_context_mut().immix[0].assume_init_mut()
-            }.rebind(self.common().get_zygote().get_immix_space());
+            unsafe { worker.get_copy_context_mut().immix[0].assume_init_mut() }
+                .rebind(self.common().get_zygote().get_immix_space());
         } else {
             // Either the runtime has a Zygote space or it is a command-line runtime
             debug_assert!(
@@ -102,7 +104,8 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
                     || (!self.common().is_zygote_process()
                         && !*self.common().base.options.is_zygote_process)
             );
-            unsafe { worker.get_copy_context_mut().immix[0].assume_init_mut() }.rebind(self.get_immix_space());
+            unsafe { worker.get_copy_context_mut().immix[0].assume_init_mut() }
+                .rebind(self.get_immix_space());
         }
     }
 
@@ -118,13 +121,14 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
 
     fn schedule_collection(&'static self, scheduler: &crate::scheduler::GCWorkScheduler<Self::VM>) {
         let is_full_heap = self.requires_full_heap_collection();
-        self.gc_full_heap.store(is_full_heap, Ordering::SeqCst);
+        self.gc_full_heap.store(is_full_heap, Ordering::Relaxed);
         probe!(mmtk, gen_full_heap, is_full_heap);
 
         if !is_full_heap {
             info!("Nursery GC");
             // nursery GC -- we schedule it
-            scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>>(self);
+            scheduler
+                .schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>>(self);
         } else {
             info!("Full heap GC");
             use crate::plan::immix::Immix;
@@ -191,7 +195,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
             && space.is_some()
             && space.as_ref().unwrap().0.name() != self.immix.immix_space.name()
         {
-            self.next_gc_full_heap.store(true, Ordering::SeqCst);
+            self.next_gc_full_heap.store(true, Ordering::Relaxed);
         }
         self.immix.collection_required(space_full, space) || nursery_full
     }
@@ -219,7 +223,8 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
     fn sanity_check_object(&self, object: crate::util::ObjectReference) -> bool {
         if self.is_current_gc_nursery() {
             // Every reachable object should be logged
-            if !VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.is_unlogged::<VM>(object, Ordering::SeqCst) {
+            if !VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.is_unlogged::<VM>(object, Ordering::Relaxed)
+            {
                 error!("Object {} is not unlogged (all objects that have been traced should be unlogged/mature)", object);
                 return false;
             }
@@ -249,7 +254,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
 
 impl<VM: VMBinding> GenerationalPlan for StickyImmix<VM> {
     fn is_current_gc_nursery(&self) -> bool {
-        !self.gc_full_heap.load(Ordering::SeqCst)
+        !self.gc_full_heap.load(Ordering::Relaxed)
     }
 
     fn is_object_in_nursery(&self, object: crate::util::ObjectReference) -> bool {
@@ -275,11 +280,11 @@ impl<VM: VMBinding> GenerationalPlan for StickyImmix<VM> {
     }
 
     fn force_full_heap_collection(&self) {
-        self.next_gc_full_heap.store(true, Ordering::SeqCst);
+        self.next_gc_full_heap.store(true, Ordering::Relaxed);
     }
 
     fn last_collection_full_heap(&self) -> bool {
-        self.gc_full_heap.load(Ordering::SeqCst)
+        self.gc_full_heap.load(Ordering::Relaxed)
     }
 }
 
@@ -340,10 +345,7 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
         }
 
         if self.immix.common().get_los().in_space(object) {
-            trace!(
-                "LOS object {} is being traced",
-                object
-            );
+            trace!("LOS object {} is being traced", object);
             return self
                 .immix
                 .common()
@@ -399,19 +401,19 @@ impl<VM: VMBinding> StickyImmix<VM> {
             .base
             .global_state
             .user_triggered_collection
-            .load(Ordering::SeqCst)
+            .load(Ordering::Relaxed)
             && *self.immix.common.base.options.full_heap_system_gc
         {
             // User triggered collection, and we force full heap for user triggered collection
             true
-        } else if self.next_gc_full_heap.load(Ordering::SeqCst)
+        } else if self.next_gc_full_heap.load(Ordering::Relaxed)
             || self
                 .immix
                 .common
                 .base
                 .global_state
                 .cur_collection_attempts
-                .load(Ordering::SeqCst)
+                .load(Ordering::Relaxed)
                 > 1
         {
             // Forces full heap collection

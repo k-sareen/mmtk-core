@@ -50,7 +50,6 @@ lazy_static! {
         CopySemantics::DefaultCopy => CopySelector::CopySpace(0),
         _ => CopySelector::Unused,
     };
-
     pub(crate) static ref SS_COPY_CONFIG_ZYGOTE: EnumMap<CopySemantics, CopySelector> = enum_map! {
         CopySemantics::DefaultCopy => CopySelector::Immix(0),
         _ => CopySelector::Unused,
@@ -76,9 +75,10 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
                     (CopySelector::CopySpace(0), &self.copyspace0),
                 ]
             } else {
-                vec![
-                    (CopySelector::Immix(0), self.common().get_zygote().get_immix_space()),
-                ]
+                vec![(
+                    CopySelector::Immix(0),
+                    self.common().get_zygote().get_immix_space(),
+                )]
             },
             constraints: &SS_CONSTRAINTS,
         }
@@ -92,7 +92,11 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
                 SemiSpace<VM>,
                 SSGCWorkContext<VM, TRACE_KIND_FAST>,
                 SSGCWorkContext<VM, TRACE_KIND_DEFRAG>,
-            >(self, self.common().get_zygote().get_immix_space(), scheduler);
+            >(
+                self,
+                self.common().get_zygote().get_immix_space(),
+                scheduler,
+            );
         } else {
             use crate::policy::gc_work::DEFAULT_TRACE;
             scheduler.schedule_common_work::<SSGCWorkContext<VM, DEFAULT_TRACE>>(self);
@@ -118,9 +122,9 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
 
         if likely(!self.common().is_zygote()) {
             self.hi
-                .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst); // flip the semi-spaces
-                                                                           // prepare each of the collected regions
-            let hi = self.hi.load(Ordering::SeqCst);
+                .store(!self.hi.load(Ordering::Relaxed), Ordering::Relaxed); // flip the semi-spaces
+                                                                             // prepare each of the collected regions
+            let hi = self.hi.load(Ordering::Relaxed);
             self.copyspace0.prepare(hi);
             self.copyspace1.prepare(!hi);
         }
@@ -132,7 +136,8 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
             if copy_config.config.copy_mapping != *SS_COPY_CONFIG_DEFAULT {
                 copy_config.config.copy_mapping = *SS_COPY_CONFIG_DEFAULT;
             }
-            unsafe { worker.get_copy_context_mut().copy[0].assume_init_mut() }.rebind(self.tospace());
+            unsafe { worker.get_copy_context_mut().copy[0].assume_init_mut() }
+                .rebind(self.tospace());
         } else {
             assert_eq!(
                 worker.get_copy_context_mut().config.copy_mapping,
@@ -195,7 +200,9 @@ impl<VM: VMBinding> SemiSpace<VM> {
         };
 
         // Add the chunk mark table to the list of global metadata
-        plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+        plan_args
+            .global_side_metadata_specs
+            .push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
 
         let res = SemiSpace {
             hi: AtomicBool::new(false),
@@ -216,7 +223,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
     }
 
     pub fn tospace(&self) -> &CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &self.copyspace1
         } else {
             &self.copyspace0
@@ -224,7 +231,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
     }
 
     pub fn tospace_mut(&mut self) -> &mut CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &mut self.copyspace1
         } else {
             &mut self.copyspace0
@@ -232,7 +239,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
     }
 
     pub fn fromspace(&self) -> &CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &self.copyspace0
         } else {
             &self.copyspace1
@@ -240,7 +247,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
     }
 
     pub fn fromspace_mut(&mut self) -> &mut CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &mut self.copyspace0
         } else {
             &mut self.copyspace1

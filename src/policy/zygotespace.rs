@@ -6,15 +6,15 @@ use crate::policy::immix::{ImmixSpace, ImmixSpaceArgs};
 use crate::policy::sft::{GCWorkerMutRef, SFT};
 use crate::policy::sft_map::SFTMap;
 use crate::policy::space::{CommonSpace, Space};
+use crate::scheduler::{GCWork, GCWorker, WorkBucketStage};
 use crate::util::copy::CopySemantics;
-use crate::util::heap::chunk_map::{*, self};
+use crate::util::heap::chunk_map::{self, *};
 use crate::util::heap::{PageResource, VMRequest};
 use crate::util::linear_scan::Region;
 use crate::util::metadata::side_metadata::SideMetadataSanity;
 use crate::util::metadata::MetadataSpec;
 use crate::util::rust_util::{likely, unlikely};
 use crate::util::{Address, ObjectReference};
-use crate::scheduler::{GCWork, GCWorker, WorkBucketStage};
 use crate::vm::object_model::ObjectModel;
 use crate::vm::VMBinding;
 use crate::MMTK;
@@ -172,9 +172,7 @@ impl<VM: VMBinding> Space<VM> for ZygoteSpace<VM> {
 }
 
 impl<VM: VMBinding> ZygoteSpace<VM> {
-    pub fn new(
-        args: crate::policy::space::PlanCreateSpaceArgs<VM>,
-    ) -> Self {
+    pub fn new(args: crate::policy::space::PlanCreateSpaceArgs<VM>) -> Self {
         let immix_space_args = if args.constraints.needs_log_bit {
             ImmixSpaceArgs {
                 unlog_object_when_traced: true,
@@ -206,13 +204,12 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
                 // and then do a transitive closure
                 // SAFETY: ImmixSpace reference is always valid within this collection cycle.
                 let space = unsafe { &*(self.get_immix_space() as *const ImmixSpace<VM>) };
-                let work_packets = self.immix_space.chunk_map.generate_tasks(|chunk| {
-                    Box::new(ClearZygoteMetadata {
-                        space,
-                        chunk,
-                    })
-                });
-                self.immix_space.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
+                let work_packets = self
+                    .immix_space
+                    .chunk_map
+                    .generate_tasks(|chunk| Box::new(ClearZygoteMetadata { space, chunk }));
+                self.immix_space.scheduler().work_buckets[WorkBucketStage::Prepare]
+                    .bulk_add(work_packets);
             }
         } else {
             self.immix_space.prepare(major_gc, plan_stats);
@@ -253,13 +250,14 @@ impl<VM: VMBinding> PolicyTraceObject<VM> for ZygoteSpace<VM> {
             if self.immix_space.mark_state.test_and_mark::<VM>(object) {
                 if self.common().needs_log_bit {
                     VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                        .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+                        .mark_byte_as_unlogged::<VM>(object, Ordering::Relaxed);
                 }
                 queue.enqueue(object);
             }
             object
         } else {
-            self.immix_space.trace_object::<Q, KIND>(queue, object, copy, worker)
+            self.immix_space
+                .trace_object::<Q, KIND>(queue, object, copy, worker)
         }
     }
 
@@ -352,7 +350,9 @@ impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
     }
 
     fn get_potential_forwarded_object(&self, object: ObjectReference) -> Address {
-        self.as_ref().unwrap().get_potential_forwarded_object(object)
+        self.as_ref()
+            .unwrap()
+            .get_potential_forwarded_object(object)
     }
 
     fn is_live(&self, object: ObjectReference) -> bool {
@@ -384,7 +384,9 @@ impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
     }
 
     fn initialize_object_metadata(&self, object: ObjectReference, alloc: bool) {
-        self.as_ref().unwrap().initialize_object_metadata(object, alloc);
+        self.as_ref()
+            .unwrap()
+            .initialize_object_metadata(object, alloc);
     }
 
     #[cfg(feature = "is_mmtk_object")]
@@ -442,7 +444,9 @@ impl<VM: VMBinding> ClearZygoteMetadata<VM> {
             if state == BlockState::Unallocated {
                 continue;
             } else {
-                self.space.mark_state.on_block_reset::<VM>(block.start(), Block::BYTES);
+                self.space
+                    .mark_state
+                    .on_block_reset::<VM>(block.start(), Block::BYTES);
                 if self.space.common().needs_log_bit {
                     if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
                         // We zero all the log bits in major GC, and for every object we trace, we will mark the log bit again.

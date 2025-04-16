@@ -96,9 +96,9 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
         );
         if full_heap {
             self.hi
-                .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst); // flip the semi-spaces
+                .store(!self.hi.load(Ordering::Relaxed), Ordering::Relaxed); // flip the semi-spaces
         }
-        let hi = self.hi.load(Ordering::SeqCst);
+        let hi = self.hi.load(Ordering::Relaxed);
         self.copyspace0.prepare(hi);
         self.copyspace1.prepare(!hi);
 
@@ -199,7 +199,8 @@ impl<VM: VMBinding> GenerationalPlanExt<VM> for GenCopy<VM> {
         object: ObjectReference,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
-        self.gen.trace_object_nursery::<Q, KIND>(queue, object, worker)
+        self.gen
+            .trace_object_nursery::<Q, KIND>(queue, object, worker)
     }
 }
 
@@ -213,7 +214,9 @@ impl<VM: VMBinding> GenCopy<VM> {
         };
 
         // Add the chunk mark table to the list of global metadata
-        plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
+        plan_args
+            .global_side_metadata_specs
+            .push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
 
         let copyspace0 = CopySpace::new(
             plan_args.get_space_args("copyspace0", true, false, VMRequest::discontiguous()),
@@ -241,7 +244,7 @@ impl<VM: VMBinding> GenCopy<VM> {
     }
 
     pub fn tospace(&self) -> &CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &self.copyspace1
         } else {
             &self.copyspace0
@@ -249,7 +252,7 @@ impl<VM: VMBinding> GenCopy<VM> {
     }
 
     pub fn tospace_mut(&mut self) -> &mut CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &mut self.copyspace1
         } else {
             &mut self.copyspace0
@@ -257,7 +260,7 @@ impl<VM: VMBinding> GenCopy<VM> {
     }
 
     pub fn fromspace(&self) -> &CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &self.copyspace0
         } else {
             &self.copyspace1
@@ -265,7 +268,7 @@ impl<VM: VMBinding> GenCopy<VM> {
     }
 
     pub fn fromspace_mut(&mut self) -> &mut CopySpace<VM> {
-        if self.hi.load(Ordering::SeqCst) {
+        if self.hi.load(Ordering::Relaxed) {
             &mut self.copyspace0
         } else {
             &mut self.copyspace1

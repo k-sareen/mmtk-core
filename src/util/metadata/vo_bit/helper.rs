@@ -171,7 +171,7 @@ pub(crate) fn on_object_forwarded<VM: VMBinding>(new_object: ObjectReference) {
                 new_object,
                 1,
                 None,
-                Ordering::SeqCst,
+                Ordering::Relaxed,
             );
 
             // We set the VO bit for the to-space object eagerly.
