@@ -25,7 +25,6 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-// use std::sync::Mutex;
 
 /// A special space for VM/Runtime managed memory. The implementation is similar to [`crate::policy::immortalspace::ImmortalSpace`],
 /// except that VM space does not allocate. Instead, the runtime can add regions that are externally managed
@@ -36,13 +35,9 @@ pub struct VMSpace<VM: VMBinding> {
     mark_state: MarkState,
     common: CommonSpace<VM>,
     pr: ExternalPageResource<VM>,
-    // pub(crate) slots: Mutex<Vec<VM::VMSlot>>,
-    // pub(crate) objects: Mutex<Vec<ObjectReference>>,
     scheduler: Arc<GCWorkScheduler<VM>>,
     start: Address,
     size: usize,
-    // #[cfg(debug_assertions)]
-    // pub(crate) slots_set: Mutex<HashSet<VM::VMSlot>>,
 }
 
 impl<VM: VMBinding> SFT for VMSpace<VM> {
@@ -53,7 +48,6 @@ impl<VM: VMBinding> SFT for VMSpace<VM> {
         true
     }
     fn is_reachable(&self, object: ObjectReference) -> bool {
-        // self.mark_state.is_marked::<VM>(object)
         true
     }
     #[cfg(feature = "object_pinning")]
@@ -159,13 +153,7 @@ impl<VM: VMBinding> Space<VM> for VMSpace<VM> {
     }
 
     fn address_in_space(&self, start: Address) -> bool {
-        // The default implementation checks with vm map. But vm map has some assumptions about
-        // the address range for spaces and the VM space may break those assumptions (as the space is
-        // mmapped by the runtime rather than us). So we we use SFT here.
         self.start <= start && start < self.start + self.size
-        // unsafe { SFT_MAP.get_checked_nonatomic(start).name() == self.name() }
-        // SFT_MAP.get_checked(start).name() == self.name()
-        // self.pr.get_external_pages().iter().any(|ep| ep.start <= start && start < ep.end)
     }
 
     fn enumerate_objects(&self, enumerator: &mut dyn ObjectEnumerator) {
@@ -209,11 +197,7 @@ impl<VM: VMBinding> VMSpace<VM> {
                     *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
                 ]),
             )),
-            // slots: Mutex::new(vec![]),
-            // objects: Mutex::new(vec![]),
             scheduler,
-            // #[cfg(debug_assertions)]
-            // slots_set: Mutex::new(HashSet::new()),
             start: vm_space_start,
             size: vm_space_size,
         };
@@ -319,13 +303,6 @@ impl<VM: VMBinding> VMSpace<VM> {
             object
         );
         debug_assert!(self.in_space(object));
-        // TODO(kunals): Fix this because it's most likely broken for generational GC
-        // if self.mark_state.test_and_mark::<VM>(object) {
-        //     if self.common.needs_log_bit {
-        //         VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-        //             .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
-        //     }
-        // }
         object
     }
 }
@@ -353,73 +330,5 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessVmSpaceObjects<E> {
         };
 
         <E::VM as VMBinding>::VMScanning::scan_vm_space_objects(tls, closure);
-
-        // if likely(self.vmspace.initialized) {
-        //     // use crate::vm::slot::Slot;
-        //     // use crate::vm::Scanning;
-
-        //     let objects = self.vmspace.objects.lock().unwrap();
-        //     // let slots = self.vmspace.slots.lock().unwrap();
-
-        //     // println!("Processing {} VM space objects", objects.len());
-        //     // println!("Processing {} VM space slots", slots.len());
-
-        //     // let mut object_slots = vec![];
-        //     // let mut outside_vmspace_object_slots = HashSet::new();
-        //     // for object in objects.iter() {
-        //     //     let slots = <E::VM as VMBinding>::VMScanning::scan_object(
-        //     //         worker.tls,
-        //     //         *object,
-        //     //         &mut |slot: <E::VM as VMBinding>::VMSlot| {
-        //     //             object_slots.push(slot);
-        //     //             if !self.vmspace.address_in_space(slot.as_address()) {
-        //     //                 outside_vmspace_object_slots.insert(*object);
-        //     //             }
-        //     //         },
-        //     //     );
-        //     // }
-
-        //     // println!("Processing {} VM space object slots", object_slots.len());
-        //     // println!(
-        //     //     "{} VM space object with slots outside VM space",
-        //     //     outside_vmspace_object_slots.len()
-        //     // );
-
-        //     // let slot_set: HashSet<<E::VM as VMBinding>::VMSlot> =
-        //     //     HashSet::from_iter(slots.iter().cloned());
-        //     // let object_slots_set = HashSet::from_iter(object_slots.iter().cloned());
-
-        //     // let mut diff = object_slots_set.difference(&slot_set).collect::<Vec<_>>();
-        //     // diff.sort();
-
-        //     // for object in outside_vmspace_object_slots.iter().take(5) {
-        //     //     <E::VM as VMBinding>::VMObjectModel::dump_object(*object);
-        //     // }
-
-        //     // println!("{} difference slots", diff.len());
-        //     // println!("Difference: {:?}", diff);
-
-        //     // iterate through the first five elements of the difference
-        //     // for slot in diff.iter().take(5) {
-        //     //     let Some(object) = slot.load() else { continue };
-        //     //     <E::VM as VMBinding>::VMObjectModel::dump_object(object);
-        //     // }
-
-        //     // assert_eq!(object_slots.len(), slots.len());
-
-        //     GCWork::do_work(
-        //         &mut ScanObjects::<E>::new(objects.clone(), false, WorkBucketStage::Closure),
-        //         worker,
-        //         mmtk,
-        //     )
-
-        //     // let slots = self.vmspace.slots.lock().unwrap();
-        //     // println!("Processing {} VM space slots", slots.len());
-        //     // GCWork::do_work(
-        //     //     &mut E::new(slots.clone(), false, mmtk, WorkBucketStage::Closure),
-        //     //     worker,
-        //     //     mmtk,
-        //     // )
-        // }
     }
 }
