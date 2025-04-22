@@ -69,7 +69,7 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
     }
 
     fn is_live(&self, object: ObjectReference) -> bool {
-        is_marked::<VM>(object, Ordering::Relaxed)
+        is_marked::<VM>(object, Ordering::SeqCst)
     }
 
     #[cfg(feature = "object_pinning")]
@@ -224,7 +224,7 @@ impl<VM: VMBinding> Space<VM> for MallocSpace<VM> {
         use crate::util::constants::LOG_BYTES_IN_PAGE;
         // Assume malloc pages are no smaller than 4K pages. Otherwise the substraction below will fail.
         debug_assert!(LOG_BYTES_IN_MALLOC_PAGE >= LOG_BYTES_IN_PAGE);
-        let data_pages = self.active_pages.load(Ordering::Relaxed)
+        let data_pages = self.active_pages.load(Ordering::SeqCst)
             << (LOG_BYTES_IN_MALLOC_PAGE - LOG_BYTES_IN_PAGE);
         let meta_pages = self.estimate_side_meta_pages(data_pages);
         data_pages + meta_pages
@@ -328,7 +328,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
         }
 
         if used_pages != 0 {
-            self.active_pages.fetch_add(used_pages, Ordering::Relaxed);
+            self.active_pages.fetch_add(used_pages, Ordering::SeqCst);
         }
     }
 
@@ -353,8 +353,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
         }
 
         if cleared_pages != 0 {
-            self.active_pages
-                .fetch_sub(cleared_pages, Ordering::Relaxed);
+            self.active_pages.fetch_sub(cleared_pages, Ordering::SeqCst);
         }
     }
 
@@ -381,7 +380,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
 
             // Set page marks for current object
             self.set_page_mark(address, actual_size);
-            self.active_bytes.fetch_add(actual_size, Ordering::Relaxed);
+            self.active_bytes.fetch_add(actual_size, Ordering::SeqCst);
 
             if is_offset_malloc {
                 set_offset_malloc_bit(address);
@@ -418,7 +417,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
             }
         }
 
-        self.active_bytes.fetch_sub(bytes, Ordering::Relaxed);
+        self.active_bytes.fetch_sub(bytes, Ordering::SeqCst);
 
         #[cfg(debug_assertions)]
         if ASSERT_ALLOCATION {
@@ -439,7 +438,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
 
         if !is_marked::<VM>(object, Ordering::Relaxed) {
             let chunk_start = conversions::chunk_align_down(object.to_object_start::<VM>());
-            set_mark_bit::<VM>(object, Ordering::Relaxed);
+            set_mark_bit::<VM>(object, Ordering::SeqCst);
             set_chunk_mark(chunk_start);
             queue.enqueue(object);
         }
@@ -513,9 +512,9 @@ impl<VM: VMBinding> MallocSpace<VM> {
         #[cfg(debug_assertions)]
         {
             self.total_work_packets
-                .store(work_packets.len() as u32, Ordering::Relaxed);
-            self.completed_work_packets.store(0, Ordering::Relaxed);
-            self.work_live_bytes.store(0, Ordering::Relaxed);
+                .store(work_packets.len() as u32, Ordering::SeqCst);
+            self.completed_work_packets.store(0, Ordering::SeqCst);
+            self.work_live_bytes.store(0, Ordering::SeqCst);
         }
 
         self.scheduler.work_buckets[WorkBucketStage::Release].bulk_add(work_packets);
@@ -598,12 +597,12 @@ impl<VM: VMBinding> MallocSpace<VM> {
     fn debug_sweep_chunk_done(&self, live_bytes_in_the_chunk: usize) {
         debug!(
             "Used bytes after releasing: {}",
-            self.active_bytes.load(Ordering::Relaxed)
+            self.active_bytes.load(Ordering::SeqCst)
         );
 
-        let completed_packets = self.completed_work_packets.fetch_add(1, Ordering::Relaxed) + 1;
+        let completed_packets = self.completed_work_packets.fetch_add(1, Ordering::SeqCst) + 1;
         self.work_live_bytes
-            .fetch_add(live_bytes_in_the_chunk, Ordering::Relaxed);
+            .fetch_add(live_bytes_in_the_chunk, Ordering::SeqCst);
 
         if completed_packets == self.total_work_packets.load(Ordering::Relaxed) {
             trace!(

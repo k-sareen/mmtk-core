@@ -142,9 +142,7 @@ impl<VM: VMBinding> Space<VM> for MarkCompactSpace<VM> {
     }
 
     fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
-        self.pr
-            .iterate_allocated_regions()
-            .collect::<Vec<(Address, usize)>>()
+        self.pr.iterate_allocated_regions().collect::<Vec<(Address, usize)>>()
     }
 }
 
@@ -286,7 +284,7 @@ impl<VM: VMBinding> MarkCompactSpace<VM> {
             let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
                 object,
                 None,
-                Ordering::Relaxed,
+                Ordering::SeqCst,
             );
             let mark_bit = old_value & GC_MARK_BIT_MASK;
             if mark_bit != 0 {
@@ -298,8 +296,8 @@ impl<VM: VMBinding> MarkCompactSpace<VM> {
                     old_value,
                     1,
                     None,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
                 )
                 .is_ok()
             {
@@ -314,7 +312,7 @@ impl<VM: VMBinding> MarkCompactSpace<VM> {
             let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
                 object,
                 None,
-                Ordering::Relaxed,
+                Ordering::SeqCst,
             );
             let mark_bit = old_value & GC_MARK_BIT_MASK;
             if mark_bit == 0 {
@@ -327,8 +325,8 @@ impl<VM: VMBinding> MarkCompactSpace<VM> {
                     old_value,
                     0,
                     None,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
                 )
                 .is_ok()
             {
@@ -342,7 +340,7 @@ impl<VM: VMBinding> MarkCompactSpace<VM> {
         let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
             object,
             None,
-            Ordering::Relaxed,
+            Ordering::SeqCst,
         );
         let mark_bit = old_value & GC_MARK_BIT_MASK;
         mark_bit != 0

@@ -125,14 +125,14 @@ impl Block {
 
     /// Get block mark state.
     pub fn get_state(&self) -> BlockState {
-        let byte = Self::MARK_TABLE.load_atomic::<u8>(self.start(), Ordering::Relaxed);
+        let byte = Self::MARK_TABLE.load_atomic::<u8>(self.start(), Ordering::SeqCst);
         byte.into()
     }
 
     /// Set block mark state.
     pub fn set_state(&self, state: BlockState) {
         let state = u8::from(state);
-        Self::MARK_TABLE.store_atomic::<u8>(self.start(), state, Ordering::Relaxed);
+        Self::MARK_TABLE.store_atomic::<u8>(self.start(), state, Ordering::SeqCst);
     }
 
     // Defrag byte
@@ -141,7 +141,7 @@ impl Block {
 
     /// Test if the block is marked for defragmentation.
     pub fn is_defrag_source(&self) -> bool {
-        let byte = Self::DEFRAG_STATE_TABLE.load_atomic::<u8>(self.start(), Ordering::Relaxed);
+        let byte = Self::DEFRAG_STATE_TABLE.load_atomic::<u8>(self.start(), Ordering::SeqCst);
         // The byte should be 0 (not defrag source) or 255 (defrag source) if this is a major defrag GC, as we set the values in PrepareBlockState.
         // But it could be any value in a nursery GC.
         byte == Self::DEFRAG_SOURCE_STATE
@@ -150,17 +150,17 @@ impl Block {
     /// Mark the block for defragmentation.
     pub fn set_as_defrag_source(&self, defrag: bool) {
         let byte = if defrag { Self::DEFRAG_SOURCE_STATE } else { 0 };
-        Self::DEFRAG_STATE_TABLE.store_atomic::<u8>(self.start(), byte, Ordering::Relaxed);
+        Self::DEFRAG_STATE_TABLE.store_atomic::<u8>(self.start(), byte, Ordering::SeqCst);
     }
 
     /// Record the number of holes in the block.
     pub fn set_holes(&self, holes: usize) {
-        Self::DEFRAG_STATE_TABLE.store_atomic::<u8>(self.start(), holes as u8, Ordering::Relaxed);
+        Self::DEFRAG_STATE_TABLE.store_atomic::<u8>(self.start(), holes as u8, Ordering::SeqCst);
     }
 
     /// Get the number of holes.
     pub fn get_holes(&self) -> usize {
-        let byte = Self::DEFRAG_STATE_TABLE.load_atomic::<u8>(self.start(), Ordering::Relaxed);
+        let byte = Self::DEFRAG_STATE_TABLE.load_atomic::<u8>(self.start(), Ordering::SeqCst);
         debug_assert_ne!(byte, Self::DEFRAG_SOURCE_STATE);
         byte as usize
     }
@@ -172,7 +172,7 @@ impl Block {
         } else {
             BlockState::Unmarked
         });
-        Self::DEFRAG_STATE_TABLE.store_atomic::<u8>(self.start(), 0, Ordering::Relaxed);
+        Self::DEFRAG_STATE_TABLE.store_atomic::<u8>(self.start(), 0, Ordering::SeqCst);
     }
 
     /// Deinitalize a block before releasing.
@@ -253,11 +253,7 @@ impl Block {
                         line.mark(0);
                     }
                     #[cfg(feature = "poison_on_release")]
-                    crate::util::memory::set_pattern(
-                        line.start(),
-                        (0xdeadbeef ^ line.start().as_usize()) & !0xff,
-                        Line::BYTES,
-                    );
+                    crate::util::memory::set_pattern(line.start(), (0xdeadbeef ^ line.start().as_usize()) & !0xff, Line::BYTES);
 
                     // We need to clear the pin bit if it is on the side, as this line can be reused
                     #[cfg(feature = "object_pinning")]

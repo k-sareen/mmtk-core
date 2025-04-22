@@ -295,7 +295,7 @@ impl Block {
             let potential_object = unsafe { ObjectReference::from_raw_address_unchecked(cell) };
 
             if !VM::VMObjectModel::LOCAL_MARK_BIT_SPEC
-                .is_marked::<VM>(potential_object, Ordering::Relaxed)
+                .is_marked::<VM>(potential_object, Ordering::SeqCst)
             {
                 // clear VO bit if it is ever set. It is possible that the VO bit is never set for this cell (i.e. there was no object in this cell before this GC),
                 // we unset the bit anyway.
@@ -348,7 +348,7 @@ impl Block {
             );
 
             if VM::VMObjectModel::LOCAL_MARK_BIT_SPEC
-                .is_marked::<VM>(potential_object_ref, Ordering::Relaxed)
+                .is_marked::<VM>(potential_object_ref, Ordering::SeqCst)
             {
                 debug!("{:?} Live cell: {}", self, cell);
                 // If the mark bit is set, the cell is alive.

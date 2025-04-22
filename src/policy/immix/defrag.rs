@@ -58,7 +58,7 @@ impl StatsForDefrag {
     pub fn new_from_stats(
         total_pages: usize,
         reserved_pages: usize,
-        collection_reserved_pages: usize,
+        collection_reserved_pages: usize
     ) -> Self {
         Self {
             total_pages,
@@ -85,7 +85,7 @@ impl Defrag {
 
     /// Check if the current GC is a defrag GC.
     pub fn in_defrag(&self) -> bool {
-        self.in_defrag_collection.load(Ordering::Relaxed)
+        self.in_defrag_collection.load(Ordering::Acquire)
     }
 
     pub fn set_defrag_headroom_percent(&mut self, defrag_headroom_percent: usize) {
@@ -113,7 +113,7 @@ impl Defrag {
         info!("Defrag: {}", in_defrag);
         probe!(mmtk, immix_defrag, in_defrag);
         self.in_defrag_collection
-            .store(in_defrag, Ordering::Relaxed)
+            .store(in_defrag, Ordering::Release)
     }
 
     /// Get the number of defrag headroom pages.
@@ -123,7 +123,7 @@ impl Defrag {
 
     /// Check if the defrag space is exhausted.
     pub fn space_exhausted(&self) -> bool {
-        self.defrag_space_exhausted.load(Ordering::Relaxed)
+        self.defrag_space_exhausted.load(Ordering::Acquire)
     }
 
     /// Update available_clean_pages_for_defrag counter when a clean block is allocated.
@@ -131,8 +131,8 @@ impl Defrag {
         if copy {
             let available_clean_pages_for_defrag =
                 self.available_clean_pages_for_defrag.fetch_update(
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
                     |available_clean_pages_for_defrag| {
                         if available_clean_pages_for_defrag <= Block::PAGES {
                             Some(0)
@@ -142,7 +142,7 @@ impl Defrag {
                     },
                 );
             if available_clean_pages_for_defrag.unwrap() <= Block::PAGES {
-                self.defrag_space_exhausted.store(true, Ordering::Relaxed);
+                self.defrag_space_exhausted.store(true, Ordering::SeqCst);
             }
         }
     }
@@ -151,22 +151,20 @@ impl Defrag {
     #[allow(clippy::assertions_on_constants)]
     pub fn prepare<VM: VMBinding>(&self, space: &ImmixSpace<VM>, plan_stats: StatsForDefrag) {
         debug_assert!(super::DEFRAG);
-        self.defrag_space_exhausted.store(false, Ordering::Relaxed);
+        self.defrag_space_exhausted.store(false, Ordering::Release);
 
         // Calculate available free space for defragmentation. Since
         // plan.get_reserved_pages() already accounts for the collection
         // reserved pages, we need to remove the defrag_headroom_pages() to get
         // actual number of reserved pages
         let mut available_clean_pages_for_defrag = plan_stats.total_pages as isize
-            - (plan_stats.reserved_pages as isize - self.defrag_headroom_pages(space) as isize);
+            - (plan_stats.reserved_pages as isize
+                - self.defrag_headroom_pages(space) as isize);
 
-        available_clean_pages_for_defrag = std::cmp::max(
-            available_clean_pages_for_defrag,
-            self.defrag_headroom_pages(space) as isize,
-        );
+        available_clean_pages_for_defrag = std::cmp::max(available_clean_pages_for_defrag, self.defrag_headroom_pages(space) as isize);
 
         self.available_clean_pages_for_defrag
-            .store(available_clean_pages_for_defrag as usize, Ordering::Relaxed);
+            .store(available_clean_pages_for_defrag as usize, Ordering::Release);
 
         if self.in_defrag() {
             self.establish_defrag_spill_threshold(space)
@@ -200,7 +198,7 @@ impl Defrag {
         let available_lines = clean_lines
             + (self
                 .available_clean_pages_for_defrag
-                .load(Ordering::Relaxed)
+                .load(Ordering::Acquire)
                 << (LOG_BYTES_IN_PAGE as usize - Line::LOG_BYTES));
 
         // Number of lines we will evacuate.
@@ -233,13 +231,13 @@ impl Defrag {
         // println!("threshold: {}", threshold);
         debug_assert!(threshold >= Self::MIN_SPILL_THRESHOLD);
         self.defrag_spill_threshold
-            .store(threshold, Ordering::Relaxed);
+            .store(threshold, Ordering::Release);
     }
 
     /// Reset the in-defrag state.
     #[allow(clippy::assertions_on_constants)]
     pub fn reset_in_defrag(&self) {
         debug_assert!(super::DEFRAG);
-        self.in_defrag_collection.store(false, Ordering::Relaxed);
+        self.in_defrag_collection.store(false, Ordering::Release);
     }
 }

@@ -226,9 +226,7 @@ impl<VM: VMBinding> MMTK<VM> {
             vm_layout().heap_start,
             heap_pages,
             quarantine_strategy,
-            &MmapAnnotation::Misc {
-                name: "quarantined",
-            },
+            &MmapAnnotation::Misc { name: "quarantined" },
         );
 
         // XXX(kunals): If we are using NoGC then mmap and zero the entire space. This means that
@@ -300,7 +298,7 @@ impl<VM: VMBinding> MMTK<VM> {
             self.create_perf_counters();
         }
         self.scheduler.spawn_gc_threads(self, tls);
-        self.state.initialized.store(true, Ordering::Relaxed);
+        self.state.initialized.store(true, Ordering::SeqCst);
         probe!(mmtk, collection_initialized);
     }
 
@@ -447,7 +445,7 @@ impl<VM: VMBinding> MMTK<VM> {
     pub(crate) fn set_gc_status(&self, s: GcStatus) {
         let mut gc_status = self.state.gc_status.lock().unwrap();
         if *gc_status == GcStatus::NotInGC {
-            self.state.stacks_prepared.store(false, Ordering::Relaxed);
+            self.state.stacks_prepared.store(false, Ordering::SeqCst);
             // FIXME stats
             self.stats.start_gc();
         }

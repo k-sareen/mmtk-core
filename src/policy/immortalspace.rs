@@ -119,9 +119,7 @@ impl<VM: VMBinding> Space<VM> for ImmortalSpace<VM> {
     }
 
     fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
-        self.pr
-            .iterate_allocated_regions()
-            .collect::<Vec<(Address, usize)>>()
+        self.pr.iterate_allocated_regions().collect::<Vec<(Address, usize)>>()
     }
 }
 
@@ -225,7 +223,7 @@ impl<VM: VMBinding> ImmortalSpace<VM> {
                     object,
                     1,
                     None,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
                 );
             }
             queue.enqueue(object);

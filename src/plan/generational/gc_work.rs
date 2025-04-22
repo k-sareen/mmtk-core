@@ -7,8 +7,8 @@ use crate::scheduler::{gc_work::*, GCWork, GCWorker, WorkBucketStage};
 use crate::util::ObjectReference;
 use crate::vm::slot::{MemorySlice, Slot};
 use crate::vm::*;
-use crate::ObjectQueue;
 use crate::MMTK;
+use crate::ObjectQueue;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -53,8 +53,7 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
                 worker,
             )
         } else {
-            self.plan
-                .trace_object_nursery::<_, KIND>(self, object, worker)
+            self.plan.trace_object_nursery::<_, KIND>(self, object, worker)
         }
     }
 
@@ -98,8 +97,8 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
     }
 }
 
-impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND: TraceKind>
-    ObjectQueue for GenNurseryProcessEdges<VM, P, KIND>
+impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND: TraceKind> ObjectQueue
+    for GenNurseryProcessEdges<VM, P, KIND>
 {
     fn enqueue(&mut self, object: ObjectReference) {
         let tls = self.worker().tls;
@@ -107,7 +106,9 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
             let Some(_) = slot.load() else { return };
             self.slots.push(slot);
             self.pushes += 1;
-            if self.slots.len() >= Self::CAPACITY || self.pushes >= (Self::CAPACITY / 2) as u32 {
+            if self.slots.len() >= Self::CAPACITY
+                || self.pushes >= (Self::CAPACITY / 2) as u32
+            {
                 self.flush_half();
             }
         };
@@ -189,7 +190,7 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessModBuf<E> {
                     *obj,
                     1,
                     None,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
                 );
             }
             // Scan objects in the modbuf and forward pointers

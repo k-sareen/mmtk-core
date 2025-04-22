@@ -101,9 +101,9 @@ impl<VM: VMBinding> Plan for MyGC<VM> {
         self.common.prepare(tls, true);
 
         self.hi
-            .store(!self.hi.load(Ordering::Relaxed), Ordering::Relaxed);
+            .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst);
         // Flips 'hi' to flip space definitions
-        let hi = self.hi.load(Ordering::Relaxed);
+        let hi = self.hi.load(Ordering::SeqCst);
         self.copyspace0.prepare(hi);
         self.copyspace1.prepare(!hi);
 
@@ -189,7 +189,7 @@ impl<VM: VMBinding> MyGC<VM> {
 
     // ANCHOR: plan_space_access
     pub fn tospace(&self) -> &CopySpace<VM> {
-        if self.hi.load(Ordering::Relaxed) {
+        if self.hi.load(Ordering::SeqCst) {
             &self.copyspace1
         } else {
             &self.copyspace0
@@ -197,7 +197,7 @@ impl<VM: VMBinding> MyGC<VM> {
     }
 
     pub fn fromspace(&self) -> &CopySpace<VM> {
-        if self.hi.load(Ordering::Relaxed) {
+        if self.hi.load(Ordering::SeqCst) {
             &self.copyspace0
         } else {
             &self.copyspace1
@@ -205,7 +205,7 @@ impl<VM: VMBinding> MyGC<VM> {
     }
 
     pub fn tospace_mut(&mut self) -> &mut CopySpace<VM> {
-        if self.hi.load(Ordering::Relaxed) {
+        if self.hi.load(Ordering::SeqCst) {
             &mut self.copyspace1
         } else {
             &mut self.copyspace0
@@ -213,7 +213,7 @@ impl<VM: VMBinding> MyGC<VM> {
     }
 
     pub fn fromspace_mut(&mut self) -> &mut CopySpace<VM> {
-        if self.hi.load(Ordering::Relaxed) {
+        if self.hi.load(Ordering::SeqCst) {
             &mut self.copyspace0
         } else {
             &mut self.copyspace1

@@ -55,7 +55,7 @@ impl MarkState {
         let state = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
             object,
             None,
-            Ordering::Relaxed,
+            Ordering::SeqCst,
         );
         state == self.state
     }
@@ -68,7 +68,7 @@ impl MarkState {
             object,
             self.state,
             None,
-            Ordering::Relaxed,
+            Ordering::SeqCst,
         );
     }
 
@@ -80,7 +80,7 @@ impl MarkState {
             object,
             self.unmarked_state(),
             None,
-            Ordering::Relaxed,
+            Ordering::SeqCst,
         );
     }
 
@@ -91,7 +91,7 @@ impl MarkState {
             let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
                 object,
                 None,
-                Ordering::Relaxed,
+                Ordering::SeqCst,
             );
             if old_value == self.state {
                 return false;
@@ -103,8 +103,8 @@ impl MarkState {
                     old_value,
                     self.state,
                     None,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
                 )
                 .is_ok()
             {
@@ -122,7 +122,7 @@ impl MarkState {
                 object,
                 self.unmarked_state(),
                 None,
-                Ordering::Relaxed,
+                Ordering::SeqCst,
             );
         }
     }

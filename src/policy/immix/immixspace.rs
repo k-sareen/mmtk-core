@@ -13,15 +13,15 @@ use crate::util::heap::chunk_map::*;
 use crate::util::heap::BlockPageResource;
 use crate::util::heap::PageResource;
 use crate::util::linear_scan::{Region, RegionIterator};
-use crate::util::metadata::mark_bit::MarkState;
 use crate::util::metadata::side_metadata::SideMetadataSpec;
+use crate::util::metadata::mark_bit::MarkState;
 #[cfg(feature = "vo_bit")]
 use crate::util::metadata::vo_bit;
 use crate::util::metadata::{self, MetadataSpec};
 use crate::util::object_enum::ObjectEnumerator;
 use crate::util::object_forwarding;
-use crate::util::rust_util::unlikely;
 use crate::util::{copy::*, epilogue, object_enum};
+use crate::util::rust_util::unlikely;
 use crate::util::{Address, ObjectReference};
 use crate::vm::*;
 use crate::{
@@ -146,8 +146,7 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
     }
     fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         // We may have to set mark bit to 1 in case the marked state is 0
-        self.mark_state
-            .on_object_metadata_initialization::<VM>(object);
+        self.mark_state.on_object_metadata_initialization::<VM>(object);
         #[cfg(feature = "vo_bit")]
         crate::util::metadata::vo_bit::set_vo_bit(object);
     }
@@ -367,8 +366,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     }
 
     pub fn set_defrag_headroom_percent(&mut self, defrag_headroom_percent: usize) {
-        self.defrag
-            .set_defrag_headroom_percent(defrag_headroom_percent)
+        self.defrag.set_defrag_headroom_percent(defrag_headroom_percent)
     }
 
     /// Check if current GC is a defrag GC.
@@ -420,7 +418,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             }
 
             // Prepare each block for GC
-            let threshold = self.defrag.defrag_spill_threshold.load(Ordering::Relaxed);
+            let threshold = self.defrag.defrag_spill_threshold.load(Ordering::Acquire);
             // # Safety: ImmixSpace reference is always valid within this collection cycle.
             let space = unsafe { &*(self as *const Self) };
             let work_packets = self.chunk_map.generate_tasks(|chunk| {
@@ -437,10 +435,10 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             self.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
 
             if !super::BLOCK_ONLY {
-                self.line_mark_state.fetch_add(1, Ordering::Relaxed);
-                if self.line_mark_state.load(Ordering::Relaxed) > Line::MAX_MARK_STATE {
+                self.line_mark_state.fetch_add(1, Ordering::AcqRel);
+                if self.line_mark_state.load(Ordering::Acquire) > Line::MAX_MARK_STATE {
                     self.line_mark_state
-                        .store(Line::RESET_MARK_STATE, Ordering::Relaxed);
+                        .store(Line::RESET_MARK_STATE, Ordering::Release);
                 }
             }
         }
@@ -462,7 +460,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 } else {
                     // Young objects are allocated into empty lines.
                     // Only clear unmarked lines.
-                    let line_mark_state = self.line_mark_state.load(Ordering::Relaxed);
+                    let line_mark_state = self.line_mark_state.load(Ordering::SeqCst);
                     Some(VOBitsClearingScope::Line {
                         state: line_mark_state,
                     })
@@ -491,8 +489,8 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             // Update line_unavail_state for hole searching after this GC.
             if !super::BLOCK_ONLY {
                 self.line_unavail_state.store(
-                    self.line_mark_state.load(Ordering::Relaxed),
-                    Ordering::Relaxed,
+                    self.line_mark_state.load(Ordering::Acquire),
+                    Ordering::Release,
                 );
             }
         }
@@ -641,7 +639,8 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             // until the object has been forwarded by the winner. Note that the object may not
             // necessarily get forwarded since Immix opportunistically moves objects.
             #[allow(clippy::let_and_return)]
-            let new_object = object_forwarding::spin_and_get_forwarded_object::<VM>(object);
+            let new_object =
+                object_forwarding::spin_and_get_forwarded_object::<VM>(object);
             #[cfg(debug_assertions)]
             {
                 if new_object == object {
@@ -739,7 +738,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     #[allow(clippy::assertions_on_constants)]
     pub fn mark_lines(&self, object: ObjectReference) {
         debug_assert!(!super::BLOCK_ONLY);
-        Line::mark_lines_for_object::<VM>(object, self.line_mark_state.load(Ordering::Relaxed));
+        Line::mark_lines_for_object::<VM>(object, self.line_mark_state.load(Ordering::Acquire));
     }
 
     pub(crate) fn is_marked(&self, object: ObjectReference) -> bool {
@@ -765,8 +764,8 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     #[allow(clippy::assertions_on_constants)]
     pub fn get_next_available_lines(&self, search_start: Line) -> Option<(Line, Line)> {
         debug_assert!(!super::BLOCK_ONLY);
-        let unavail_state = self.line_unavail_state.load(Ordering::Relaxed);
-        let current_state = self.line_mark_state.load(Ordering::Relaxed);
+        let unavail_state = self.line_unavail_state.load(Ordering::Acquire);
+        let current_state = self.line_mark_state.load(Ordering::Acquire);
         let block = search_start.block();
         let mark_data = block.line_mark_table();
         let start_cursor = search_start.get_index_within_block();
@@ -834,9 +833,7 @@ impl<VM: VMBinding> PrepareBlockState<VM> {
     /// Clear object mark table
     fn reset_object_mark(&self) {
         // We reset the mark bits if they are on the side
-        self.space
-            .mark_state
-            .on_block_reset::<VM>(self.chunk.start(), Chunk::BYTES);
+        self.space.mark_state.on_block_reset::<VM>(self.chunk.start(), Chunk::BYTES);
     }
 }
 
@@ -894,7 +891,7 @@ impl<VM: VMBinding> GCWork<VM> for SweepChunk<VM> {
         let line_mark_state = if super::BLOCK_ONLY {
             None
         } else {
-            Some(self.space.line_mark_state.load(Ordering::Relaxed))
+            Some(self.space.line_mark_state.load(Ordering::Acquire))
         };
         // Hints for clearing side forwarding bits.
         let is_moving_gc = mmtk.get_plan().current_gc_may_move_object();
@@ -1018,7 +1015,8 @@ impl<VM: VMBinding> ImmixCopyContext<VM> {
     }
 
     pub fn rebind(&mut self, space: &ImmixSpace<VM>) {
-        self.allocator.rebind(unsafe { &*{ space as *const _ } });
+        self.allocator
+            .rebind(unsafe { &*{ space as *const _ } });
     }
 }
 

@@ -133,14 +133,14 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
             space.is_some_and(|s| s.0.common().descriptor == self.nursery.common().descriptor);
         // If space is full and the GC is not triggered by nursery, next GC will be full heap GC.
         if space_full && !is_triggered_by_nursery {
-            self.next_gc_full_heap.store(true, Ordering::Relaxed);
+            self.next_gc_full_heap.store(true, Ordering::SeqCst);
         }
 
         self.common.base.collection_required(plan, space_full)
     }
 
     pub fn force_full_heap_collection(&self) {
-        self.next_gc_full_heap.store(true, Ordering::Relaxed);
+        self.next_gc_full_heap.store(true, Ordering::SeqCst);
     }
 
     pub fn last_collection_full_heap(&self) -> bool {
@@ -162,29 +162,29 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
             .base
             .global_state
             .user_triggered_collection
-            .load(Ordering::Relaxed)
+            .load(Ordering::SeqCst)
             && *self.common.base.options.full_heap_system_gc
         {
             trace!("full heap: user triggered");
             // User triggered collection, and we force full heap for user triggered collection
             true
-        } else if self.next_gc_full_heap.load(Ordering::Relaxed)
+        } else if self.next_gc_full_heap.load(Ordering::SeqCst)
             || self
                 .common
                 .base
                 .global_state
                 .cur_collection_attempts
-                .load(Ordering::Relaxed)
+                .load(Ordering::SeqCst)
                 > 1
         {
             trace!(
                 "full heap: next_gc_full_heap = {}, cur_collection_attempts = {}",
-                self.next_gc_full_heap.load(Ordering::Relaxed),
+                self.next_gc_full_heap.load(Ordering::SeqCst),
                 self.common
                     .base
                     .global_state
                     .cur_collection_attempts
-                    .load(Ordering::Relaxed)
+                    .load(Ordering::SeqCst)
             );
             // Forces full heap collection
             true
@@ -203,7 +203,7 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
             false
         };
 
-        self.gc_full_heap.store(is_full_heap, Ordering::Relaxed);
+        self.gc_full_heap.store(is_full_heap, Ordering::SeqCst);
 
         info!(
             "{}",
@@ -248,7 +248,7 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
 
     /// Is the current GC a nursery GC?
     pub fn is_current_gc_nursery(&self) -> bool {
-        !self.gc_full_heap.load(Ordering::Relaxed)
+        !self.gc_full_heap.load(Ordering::SeqCst)
     }
 
     /// Check a plan to see if the next GC should be a full heap GC.
@@ -273,7 +273,7 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
     /// Set next_gc_full_heap to the given value.
     pub fn set_next_gc_full_heap(&self, next_gc_full_heap: bool) {
         self.next_gc_full_heap
-            .store(next_gc_full_heap, Ordering::Relaxed);
+            .store(next_gc_full_heap, Ordering::SeqCst);
     }
 
     /// Get pages reserved for the collection by a generational plan. A generational plan should

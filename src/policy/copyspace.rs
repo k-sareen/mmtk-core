@@ -152,9 +152,7 @@ impl<VM: VMBinding> Space<VM> for CopySpace<VM> {
     }
 
     fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
-        self.pr
-            .iterate_allocated_regions()
-            .collect::<Vec<(Address, usize)>>()
+        self.pr.iterate_allocated_regions().collect::<Vec<(Address, usize)>>()
     }
 }
 
@@ -202,7 +200,7 @@ impl<VM: VMBinding> CopySpace<VM> {
     }
 
     pub fn prepare(&self, from_space: bool) {
-        self.from_space.store(from_space, Ordering::Relaxed);
+        self.from_space.store(from_space, Ordering::SeqCst);
     }
 
     pub fn release(&self) {
@@ -232,11 +230,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         unsafe {
             self.pr.reset();
         }
-        self.from_space.store(false, Ordering::Relaxed);
+        self.from_space.store(false, Ordering::SeqCst);
     }
 
     fn is_from_space(&self) -> bool {
-        self.from_space.load(Ordering::Relaxed)
+        self.from_space.load(Ordering::SeqCst)
     }
 
     pub fn trace_object<Q: ObjectQueue>(
@@ -271,7 +269,8 @@ impl<VM: VMBinding> CopySpace<VM> {
         trace!("checking if object is being forwarded");
         if let Some(_) = potential_fwd {
             trace!("... yes it is");
-            let new_object = object_forwarding::spin_and_get_forwarded_object::<VM>(object);
+            let new_object =
+                object_forwarding::spin_and_get_forwarded_object::<VM>(object);
             trace!("Returning");
             new_object
         } else {

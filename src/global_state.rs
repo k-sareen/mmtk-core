@@ -64,7 +64,7 @@ pub struct GlobalState {
 impl GlobalState {
     /// Is MMTk initialized?
     pub fn is_initialized(&self) -> bool {
-        self.initialized.load(Ordering::Relaxed)
+        self.initialized.load(Ordering::SeqCst)
     }
 
     /// Set the collection kind for the current GC. This is called before
@@ -107,7 +107,7 @@ impl GlobalState {
     fn is_internal_triggered_collection(&self) -> bool {
         let is_internal_triggered = self
             .last_internal_triggered_collection
-            .load(Ordering::Relaxed);
+            .load(Ordering::SeqCst);
         // Remove this assertion when we have concurrent GC.
         assert!(
             !is_internal_triggered,
@@ -128,25 +128,25 @@ impl GlobalState {
     /// Reset collection state information.
     pub fn reset_collection_trigger(&self) {
         self.last_internal_triggered_collection.store(
-            self.internal_triggered_collection.load(Ordering::Relaxed),
+            self.internal_triggered_collection.load(Ordering::SeqCst),
             Ordering::Relaxed,
         );
         self.internal_triggered_collection
-            .store(false, Ordering::Relaxed);
+            .store(false, Ordering::SeqCst);
         self.user_triggered_collection
             .store(false, Ordering::Relaxed);
     }
 
     /// Are the stacks scanned?
     pub fn stacks_prepared(&self) -> bool {
-        self.stacks_prepared.load(Ordering::Relaxed)
+        self.stacks_prepared.load(Ordering::SeqCst)
     }
 
     /// Prepare for stack scanning. This is usually used with `inform_stack_scanned()`.
     /// This should be called before doing stack scanning.
     pub fn prepare_for_stack_scanning(&self) {
-        self.scanned_stacks.store(0, Ordering::Relaxed);
-        self.stacks_prepared.store(false, Ordering::Relaxed);
+        self.scanned_stacks.store(0, Ordering::SeqCst);
+        self.stacks_prepared.store(false, Ordering::SeqCst);
     }
 
     /// Inform that 1 stack has been scanned. The argument `n_mutators` indicates the
@@ -154,7 +154,7 @@ impl GlobalState {
     /// stacks equals the total mutator count. Otherwise it returns false. This method
     /// is thread safe and we guarantee only one thread will return true.
     pub fn inform_stack_scanned(&self, n_mutators: usize) -> bool {
-        let old = self.scanned_stacks.fetch_add(1, Ordering::Relaxed);
+        let old = self.scanned_stacks.fetch_add(1, Ordering::SeqCst);
         debug_assert!(
             old < n_mutators,
             "The number of scanned stacks ({}) is more than the number of mutators ({})",
@@ -163,7 +163,7 @@ impl GlobalState {
         );
         let scanning_done = old + 1 == n_mutators;
         if scanning_done {
-            self.stacks_prepared.store(true, Ordering::Relaxed);
+            self.stacks_prepared.store(true, Ordering::SeqCst);
         }
         scanning_done
     }
@@ -185,8 +185,7 @@ impl GlobalState {
     }
 
     pub fn set_is_zygote_process(&self, is_zygote_process: bool) {
-        self.is_zygote_process
-            .store(is_zygote_process, Ordering::Relaxed)
+        self.is_zygote_process.store(is_zygote_process, Ordering::Relaxed)
     }
 
     pub fn has_zygote_space(&self) -> bool {
@@ -194,8 +193,7 @@ impl GlobalState {
     }
 
     pub fn set_has_zygote_space(&self, has_zygote_space: bool) {
-        self.has_zygote_space
-            .store(has_zygote_space, Ordering::Relaxed)
+        self.has_zygote_space.store(has_zygote_space, Ordering::Relaxed)
     }
 
     pub fn is_pre_first_zygote_fork_gc(&self) -> bool {
@@ -203,8 +201,7 @@ impl GlobalState {
     }
 
     pub fn set_is_pre_first_zygote_fork_gc(&self, is_pre_first_zygote_fork_gc: bool) {
-        self.is_pre_first_zygote_fork_gc
-            .store(is_pre_first_zygote_fork_gc, Ordering::Relaxed)
+        self.is_pre_first_zygote_fork_gc.store(is_pre_first_zygote_fork_gc, Ordering::Relaxed)
     }
 
     pub fn is_jank_perceptible(&self) -> bool {
@@ -212,8 +209,7 @@ impl GlobalState {
     }
 
     pub fn set_is_jank_perceptible(&self, is_jank_perceptible: bool) {
-        self.is_jank_perceptible
-            .store(is_jank_perceptible, Ordering::Relaxed)
+        self.is_jank_perceptible.store(is_jank_perceptible, Ordering::Relaxed)
     }
 
     #[cfg(feature = "malloc_counted_size")]

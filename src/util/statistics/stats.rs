@@ -21,19 +21,19 @@ pub struct SharedStats {
 
 impl SharedStats {
     fn increment_phase(&self) {
-        self.phase.fetch_add(1, Ordering::Relaxed);
+        self.phase.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn get_phase(&self) -> usize {
-        self.phase.load(Ordering::Relaxed)
+        self.phase.load(Ordering::SeqCst)
     }
 
     pub fn get_gathering_stats(&self) -> bool {
-        self.gathering_stats.load(Ordering::Relaxed)
+        self.gathering_stats.load(Ordering::SeqCst)
     }
 
     fn set_gathering_stats(&self, val: bool) {
-        self.gathering_stats.store(val, Ordering::Relaxed);
+        self.gathering_stats.store(val, Ordering::SeqCst);
     }
 }
 
@@ -150,7 +150,7 @@ impl Stats {
     }
 
     pub fn start_gc(&self) {
-        self.gc_count.fetch_add(1, Ordering::Relaxed);
+        self.gc_count.fetch_add(1, Ordering::SeqCst);
         if !self.get_gathering_stats() {
             return;
         }

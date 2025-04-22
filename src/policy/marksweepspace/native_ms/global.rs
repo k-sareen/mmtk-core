@@ -163,7 +163,7 @@ impl<VM: VMBinding> SFT for MarkSweepSpace<VM> {
     }
 
     fn is_live(&self, object: crate::util::ObjectReference) -> bool {
-        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::Relaxed)
+        VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst)
     }
 
     #[cfg(feature = "object_pinning")]
@@ -351,8 +351,8 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
     /// Mark an object non-atomically.  If multiple GC worker threads attempt to mark the same
     /// object, more than one of them may return `true`.
     fn attempt_mark_non_atomic(&self, object: ObjectReference) -> bool {
-        if !VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::Relaxed) {
-            VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.mark::<VM>(object, Ordering::Relaxed);
+        if !VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.is_marked::<VM>(object, Ordering::SeqCst) {
+            VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.mark::<VM>(object, Ordering::SeqCst);
             true
         } else {
             false
@@ -367,7 +367,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             let old_value = VM::VMObjectModel::LOCAL_MARK_BIT_SPEC.load_atomic::<VM, u8>(
                 object,
                 None,
-                Ordering::Relaxed,
+                Ordering::SeqCst,
             );
             if old_value == mark_state {
                 return false;
@@ -379,8 +379,8 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                     old_value,
                     mark_state,
                     None,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
                 )
                 .is_ok()
             {
@@ -433,8 +433,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
             );
             queue.enqueue(object);
             if self.common.needs_log_bit {
-                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                    .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+                VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
             }
         }
         object
@@ -461,8 +460,7 @@ impl<VM: VMBinding> MarkSweepSpace<VM> {
                 block.set_state(BlockState::Marked);
                 queue.enqueue(object);
                 if self.common.needs_log_bit {
-                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC
-                        .mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
+                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_byte_as_unlogged::<VM>(object, Ordering::SeqCst);
                 }
             }
             object
