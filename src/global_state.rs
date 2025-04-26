@@ -50,9 +50,9 @@ pub struct GlobalState {
     pub(crate) is_pre_first_zygote_fork_gc: AtomicBool,
     /// Is the current process running in a jank perceptible mode?
     pub(crate) is_jank_perceptible: AtomicBool,
-    /// Is the current process running in a jank perceptible mode?
+    /// Number of objects traced in the last GC
     pub(crate) trace_object_count: AtomicUsize,
-    /// Is the current process running in a jank perceptible mode?
+    /// Number of objects scanned in the last GC
     pub(crate) scan_object_count: AtomicUsize,
     /// A counteer that keeps tracks of the number of bytes allocated by malloc
     #[cfg(feature = "malloc_counted_size")]

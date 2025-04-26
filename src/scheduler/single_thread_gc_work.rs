@@ -10,6 +10,7 @@ use crate::ObjectQueue;
 use crate::MMTK;
 
 use std::marker::PhantomData;
+use std::sync::atomic::Ordering;
 
 pub struct STDoCollection<VM, P>
 where
@@ -266,9 +267,24 @@ where
         self.slots.is_empty()
     }
 
+    fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
+        debug_assert!(
+            <VM as VMBinding>::VMObjectModel::is_object_sane(object),
+            "Object {:?} is not sane!",
+            object,
+        );
+        // self.plan.base().global_state.trace_object_count.fetch_add(1, Ordering::Relaxed);
+        self.plan.trace_object::<_, KIND>(self, object, self.worker())
+    }
+
     fn process_slot(&mut self, slot: VM::VMSlot) {
+        use crate::policy::space::Space;
         let Some(object) = slot.load() else { return };
-        let new_object = self.plan.trace_object::<_, KIND>(self, object, self.worker());
+        // self.plan.base().global_state.trace_object_count.fetch_add(1, Ordering::Relaxed);
+        if self.plan.base().vm_space.in_space(object) {
+            return;
+        }
+        let new_object = self.trace_object(object);
         if P::may_move_objects::<KIND>() && new_object != object {
             slot.store(new_object);
         }
@@ -290,10 +306,17 @@ where
     fn enqueue(&mut self, object: ObjectReference) {
         let tls = self.worker().tls;
         let mut closure = |slot: VM::VMSlot| {
-            let Some(_) = slot.load() else { return };
+            use crate::policy::space::Space;
+            let Some(obj) = slot.load() else { return };
+            // Don't enqueue slots which have objects in the VM space
+            // Since we scan all objects in VM space
+            if self.plan.base().vm_space.in_space(obj) {
+                return;
+            }
             self.slots.push(slot);
         };
         <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
+        // self.plan.base().global_state.scan_object_count.fetch_add(1, Ordering::Relaxed);
         self.plan.post_scan_object(object);
     }
 }
@@ -304,15 +327,8 @@ where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
 {
-    /// Forward the `trace_object` call to the underlying `ProcessEdgesWork`,
-    /// and flush as soon as the underlying buffer of `process_edges_work` is full.
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
-        debug_assert!(
-            <VM as VMBinding>::VMObjectModel::is_object_sane(object),
-            "Object {:?} is not sane!",
-            object,
-        );
-        self.plan.trace_object::<_, KIND>(self, object, self.worker())
+        self.trace_object(object)
     }
 }
 
