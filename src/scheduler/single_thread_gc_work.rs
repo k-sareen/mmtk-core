@@ -95,9 +95,10 @@ where
     P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
 {
     fn do_work(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
-        STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
         let mut closure = STObjectGraphTraversalClosure::<VM, P, DEFAULT_TRACE>::new(mmtk, worker);
-        STStopMutators::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
+        STStopMutators::<VM, P>::new().execute(worker, mmtk);
+        STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
+        STScanMutatorRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpecificRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpaceObjects::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
         STProcessWeakReferences::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
@@ -191,12 +192,11 @@ where
 pub(crate) struct STStopMutators<
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
-    const KIND: TraceKind,
 > {
     phantom: PhantomData<(VM, P)>,
 }
 
-impl<VM, P, const KIND: TraceKind> STStopMutators<VM, P, KIND>
+impl<VM, P> STStopMutators<VM, P>
 where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
@@ -209,14 +209,13 @@ where
 
     pub fn execute(
         &self,
-        closure: &mut STObjectGraphTraversalClosure<VM, P, KIND>,
         worker: &mut GCWorker<VM>,
         mmtk: &'static MMTK<VM>,
     ) {
         probe!(mmtk, stop_mutators_and_process_thread_roots_start);
         mmtk.state.prepare_for_stack_scanning();
         <VM as VMBinding>::VMCollection::stop_all_mutators(worker.tls, |mutator| {
-            STScanMutatorRootsAndFlushBuffers::<VM, P, KIND>::new(mutator).execute(closure, worker, mmtk);
+            STFlushMutatorBuffers::<VM, P>::new(mutator).execute(worker, mmtk);
         });
         mmtk.scheduler.notify_mutators_paused(mmtk);
         probe!(mmtk, stop_mutators_and_process_thread_roots_end);
@@ -278,12 +277,7 @@ where
     }
 
     fn process_slot(&mut self, slot: VM::VMSlot) {
-        use crate::policy::space::Space;
         let Some(object) = slot.load() else { return };
-        // self.plan.base().global_state.trace_object_count.fetch_add(1, Ordering::Relaxed);
-        if self.plan.base().vm_space.in_space(object) {
-            return;
-        }
         let new_object = self.trace_object(object);
         if P::may_move_objects::<KIND>() && new_object != object {
             slot.store(new_object);
@@ -356,16 +350,15 @@ where
     }
 }
 
-pub(crate) struct STScanMutatorRootsAndFlushBuffers<
+pub(crate) struct STFlushMutatorBuffers<
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
-    const KIND: TraceKind,
 > {
     pub mutator: &'static mut Mutator<VM>,
     phantom: PhantomData<(VM, P)>,
 }
 
-impl<VM, P, const KIND: TraceKind> STScanMutatorRootsAndFlushBuffers<VM, P, KIND>
+impl<VM, P> STFlushMutatorBuffers<VM, P>
 where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
@@ -376,23 +369,52 @@ where
 
     pub fn execute(
         &mut self,
-        closure: &mut STObjectGraphTraversalClosure<VM, P, KIND>,
         worker: &mut GCWorker<VM>,
         mmtk: &'static MMTK<VM>
     ) {
-        probe!(mmtk, scan_and_process_mutator_roots_start);
+        probe!(mmtk, flush_mutator_buffers_start);
         let num_mutators = <VM as VMBinding>::VMActivePlan::number_of_mutators();
-        <VM as VMBinding>::VMScanning::single_threaded_scan_roots_in_mutator_thread(
-            worker.tls,
-            unsafe { &mut *(self.mutator as *mut _) },
-            closure,
-        );
         self.mutator.flush();
         if mmtk.state.inform_stack_scanned(num_mutators) {
             <VM as VMBinding>::VMScanning::notify_initial_thread_scan_complete(
                 false, worker.tls,
             );
         }
+        probe!(mmtk, flush_mutator_buffers_end);
+    }
+}
+
+pub(crate) struct STScanMutatorRoots<
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM>,
+    const KIND: TraceKind,
+> {
+    phantom: PhantomData<(VM, P)>,
+}
+
+impl<VM, P, const KIND: TraceKind> STScanMutatorRoots<VM, P, KIND>
+where
+    VM: VMBinding,
+    P: Plan<VM = VM> + PlanTraceObject<VM>,
+{
+    pub fn new() -> Self {
+        Self { phantom: PhantomData }
+    }
+
+    pub fn execute(
+        &self,
+        closure: &mut STObjectGraphTraversalClosure<VM, P, KIND>,
+        worker: &mut GCWorker<VM>,
+        _mmtk: &'static MMTK<VM>,
+    ) {
+        probe!(mmtk, scan_and_process_mutator_roots_start);
+        <VM as VMBinding>::VMActivePlan::mutators().for_each(|mutator| {
+            <VM as VMBinding>::VMScanning::single_threaded_scan_roots_in_mutator_thread(
+                worker.tls,
+                mutator,
+                &mut *closure,
+            );
+        });
         probe!(mmtk, scan_and_process_mutator_roots_end);
     }
 }
