@@ -193,9 +193,7 @@ impl<VM: VMBinding> VMSpace<VM> {
             common: CommonSpace::new(args.into_policy_args(
                 false,
                 true,
-                crate::util::metadata::extract_side_metadata(&[
-                    *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
-                ]),
+                vec![],
             )),
             scheduler,
             start: vm_space_start,
