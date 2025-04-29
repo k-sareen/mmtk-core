@@ -573,15 +573,18 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         tasks
     }
 
-    fn sweep_chunks(&self, worker: &mut GCWorker<VM>) {
-        self.defrag.mark_histograms.lock().clear();
-        // # Safety: ImmixSpace reference is always valid within this collection cycle.
-        let space = unsafe { &*(self as *const Self) };
-        for chunk in self.chunk_map.all_chunks() {
-            let mut work_packet = SweepChunk { space, chunk };
-            work_packet.do_work(worker, worker.mmtk);
+    fn sweep_chunks(&self, _worker: &mut GCWorker<VM>) {
+        #[cfg(feature = "single_worker")]
+        {
+            self.defrag.mark_histograms.lock().clear();
+            // # Safety: ImmixSpace reference is always valid within this collection cycle.
+            let space = unsafe { &*(self as *const Self) };
+            for chunk in self.chunk_map.all_chunks() {
+                let mut work_packet = SweepChunk { space, chunk };
+                work_packet.do_work(_worker, _worker.mmtk);
+            }
+            self.flush_page_resource();
         }
-        self.flush_page_resource();
     }
 
     /// Release a block.
