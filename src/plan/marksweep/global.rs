@@ -9,6 +9,7 @@ use crate::plan::Plan;
 use crate::plan::PlanConstraints;
 use crate::policy::marksweepspace::{MarkSweepSpace, MS_MAX_OBJECT_SIZE};
 use crate::policy::space::Space;
+use crate::scheduler::GCWorker;
 use crate::scheduler::GCWorkScheduler;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::heap::gc_trigger::SpaceStats;
@@ -39,16 +40,17 @@ pub const MS_CONSTRAINTS: PlanConstraints = PlanConstraints {
 
 impl<VM: VMBinding> Plan for MarkSweep<VM> {
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
-        scheduler.schedule_common_work::<MSGCWorkContext<VM>>(self);
+        use crate::policy::gc_work::DEFAULT_TRACE;
+        scheduler.schedule_common_work::<MSGCWorkContext<VM>, DEFAULT_TRACE>(self);
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
         &ALLOCATOR_MAPPING
     }
 
-    fn prepare(&mut self, tls: VMWorkerThread) {
+    fn prepare(&mut self, worker: &mut GCWorker<VM>) {
         self.common.prepare(
-            tls,
+            worker,
             true,
             self.get_total_pages(),
             self.get_reserved_pages(),
@@ -57,9 +59,9 @@ impl<VM: VMBinding> Plan for MarkSweep<VM> {
         self.ms.prepare(true);
     }
 
-    fn release(&mut self, tls: VMWorkerThread) {
+    fn release(&mut self, worker: &mut GCWorker<VM>) {
         self.ms.release();
-        self.common.release(tls, true);
+        self.common.release(worker, true);
     }
 
     fn end_of_gc(&self, _tls: VMWorkerThread) {

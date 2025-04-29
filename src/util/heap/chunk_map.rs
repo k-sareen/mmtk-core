@@ -164,10 +164,11 @@ impl ChunkMap {
         byte & !CHUNK_MARK_BIT_MASK
     }
 
-    /// A range of all chunks in the heap.
-    pub fn all_chunks(&self) -> RegionIterator<Chunk> {
+    /// A range of all allocated chunks in the heap.
+    pub fn all_chunks(&self) -> impl Iterator<Item = Chunk> + '_ {
         let chunk_range = self.chunk_range.lock();
         RegionIterator::<Chunk>::new(chunk_range.start, chunk_range.end)
+            .filter(|c| self.get(*c) == ChunkState::Allocated)
     }
 
     /// Helper function to create per-chunk processing work packets for each allocated chunks.
@@ -176,10 +177,7 @@ impl ChunkMap {
         func: impl Fn(Chunk) -> Box<dyn GCWork<VM>>,
     ) -> Vec<Box<dyn GCWork<VM>>> {
         let mut work_packets: Vec<Box<dyn GCWork<VM>>> = vec![];
-        for chunk in self
-            .all_chunks()
-            .filter(|c| self.get(*c) == ChunkState::Allocated)
-        {
+        for chunk in self.all_chunks() {
             work_packets.push(func(chunk));
         }
         work_packets

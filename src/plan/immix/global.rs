@@ -89,25 +89,26 @@ impl<VM: VMBinding> Plan for Immix<VM> {
         &ALLOCATOR_MAPPING
     }
 
-    fn prepare(&mut self, tls: VMWorkerThread) {
+    fn prepare(&mut self, worker: &mut GCWorker<VM>) {
         self.common.prepare(
-            tls,
+            worker,
             true,
             self.get_total_pages(),
             self.get_reserved_pages(),
             self.get_collection_reserved_pages(),
         );
         self.immix_space.prepare(
+            worker,
             true,
             crate::policy::immix::defrag::StatsForDefrag::new(self),
         );
     }
 
-    fn release(&mut self, tls: VMWorkerThread) {
-        self.common.release(tls, true);
+    fn release(&mut self, worker: &mut GCWorker<VM>) {
+        self.common.release(worker, true);
         // release the collected region
         if likely(!self.common().is_zygote()) {
-            self.immix_space.release(true);
+            self.immix_space.release(worker, true);
         }
     }
 
@@ -237,10 +238,10 @@ impl<VM: VMBinding> Immix<VM> {
 
         if in_defrag {
             info!("{} defrag collection", immix_space.get_name());
-            scheduler.schedule_common_work::<DefragContext>(plan);
+            scheduler.schedule_common_work::<DefragContext, TRACE_KIND_DEFRAG>(plan);
         } else {
             info!("{} non-moving collection", immix_space.get_name());
-            scheduler.schedule_common_work::<FastContext>(plan);
+            scheduler.schedule_common_work::<FastContext, TRACE_KIND_FAST>(plan);
         }
     }
 

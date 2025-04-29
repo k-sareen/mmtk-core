@@ -12,7 +12,7 @@ use crate::MMTK;
 use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
-pub struct STDoCollection<VM, P>
+pub struct STDoCollection<VM, P, const KIND: TraceKind>
 where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
@@ -20,7 +20,7 @@ where
     phantom: PhantomData<(VM, P)>,
 }
 
-impl<VM, P> STDoCollection<VM, P>
+impl<VM, P, const KIND: TraceKind> STDoCollection<VM, P, KIND>
 where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
@@ -88,20 +88,20 @@ where
 // /// Resume mutators and end GC.
 // Final,
 
-impl<VM, P> GCWork<VM>
-    for STDoCollection<VM, P>
+impl<VM, P, const KIND: TraceKind> GCWork<VM>
+    for STDoCollection<VM, P, KIND>
 where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
 {
     fn do_work(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
-        let mut closure = STObjectGraphTraversalClosure::<VM, P, DEFAULT_TRACE>::new(mmtk, worker);
+        let mut closure = STObjectGraphTraversalClosure::<VM, P, KIND>::new(mmtk, worker);
         STStopMutators::<VM, P>::new().execute(worker, mmtk);
         STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
-        STScanMutatorRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
-        STScanVMSpecificRoots::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
-        STScanVMSpaceObjects::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
-        STProcessWeakReferences::<VM, P, DEFAULT_TRACE>::new().execute(&mut closure, worker, mmtk);
+        STScanMutatorRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+        STScanVMSpecificRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+        STScanVMSpaceObjects::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+        STProcessWeakReferences::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
         STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
         // We implicitly resume mutators in Scheduler::on_gc_finished so we don't have a separate
         // implementation for that
@@ -132,7 +132,7 @@ where
         probe!(mmtk, prepare_start);
         // SAFETY: We're a single threaded GC, so no other thread can access the plan
         let plan_mut: &mut P = unsafe { &mut *(self.plan as *const _ as *mut _) };
-        plan_mut.prepare(worker.tls);
+        plan_mut.prepare(worker);
 
         // PrepareMutator
         if plan_mut.constraints().needs_prepare_mutator {
@@ -175,7 +175,7 @@ where
         mmtk.gc_trigger.policy.on_gc_release(mmtk);
         // SAFETY: We're a single threaded GC, so no other thread can access the plan
         let plan_mut: &mut P = unsafe { &mut *(self.plan as *const _ as *mut _) };
-        plan_mut.release(worker.tls);
+        plan_mut.release(worker);
 
         // ReleaseMutator
         <VM as VMBinding>::VMActivePlan::mutators().for_each(|mutator| mutator.release(worker.tls));

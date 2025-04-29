@@ -7,6 +7,7 @@ use crate::plan::Plan;
 use crate::plan::PlanConstraints;
 use crate::policy::immortalspace::ImmortalSpace;
 use crate::policy::space::Space;
+use crate::scheduler::GCWorker;
 use crate::scheduler::GCWorkScheduler;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::heap::gc_trigger::SpaceStats;
@@ -58,11 +59,11 @@ impl<VM: VMBinding> Plan for NoGC<VM> {
         &mut self.base
     }
 
-    fn prepare(&mut self, _tls: VMWorkerThread) {
+    fn prepare(&mut self, _worker: &mut GCWorker<VM>) {
         unreachable!()
     }
 
-    fn release(&mut self, _tls: VMWorkerThread) {
+    fn release(&mut self, _worker: &mut GCWorker<VM>) {
         unreachable!()
     }
 

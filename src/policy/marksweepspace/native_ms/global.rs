@@ -262,11 +262,9 @@ impl<VM: VMBinding> Space<VM> for MarkSweepSpace<VM> {
         let mut blocks = vec![];
         let chunk_map = &self.chunk_map;
         for chunk in chunk_map.all_chunks() {
-            if chunk_map.get(chunk) == ChunkState::Allocated {
-                for block in chunk.iter_region::<Block>() {
-                    if block.get_state() != BlockState::Unallocated {
-                        blocks.push((block.start(), block.end() - block.start()));
-                    }
+            for block in chunk.iter_region::<Block>() {
+                if block.get_state() != BlockState::Unallocated {
+                    blocks.push((block.start(), block.end() - block.start()));
                 }
             }
         }

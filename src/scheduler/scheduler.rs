@@ -9,6 +9,7 @@ use super::worker_monitor::{LastParkedResult, WorkerMonitor};
 use super::*;
 use crate::global_state::GcStatus;
 use crate::mmtk::MMTK;
+use crate::policy::gc_work::TraceKind;
 use crate::policy::vmspace::ProcessVmSpaceObjects;
 use crate::util::opaque_pointer::*;
 use crate::util::options::AffinityKind;
@@ -140,10 +141,10 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
     }
 
     /// Schedule all the common work packets
-    pub fn schedule_common_work<C: GCWorkContext<VM = VM>>(&self, plan: &'static C::PlanType) {
+    pub fn schedule_common_work<C: GCWorkContext<VM = VM>, const KIND: TraceKind>(&self, plan: &'static C::PlanType) {
         #[cfg(feature = "single_worker")]
         {
-            self.schedule_single_threaded_collection::<C>(plan);
+            self.schedule_single_threaded_collection::<C, KIND>(plan);
         }
         #[cfg(not(feature = "single_worker"))]
         {
@@ -254,9 +255,13 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
     }
 
     #[cfg(feature = "single_worker")]
-    fn schedule_single_threaded_collection<C: GCWorkContext<VM = VM>>(&self, _plan: &'static C::PlanType) {
+    fn schedule_single_threaded_collection<C: GCWorkContext<VM = VM>, const KIND: TraceKind>(
+        &self,
+        _plan: &'static C::PlanType
+    ) {
         use crate::scheduler::single_thread_gc_work::STDoCollection;
-        self.work_buckets[WorkBucketStage::Unconstrained].add(STDoCollection::<C::VM, C::STPlanType>::new());
+        self.work_buckets[WorkBucketStage::Unconstrained]
+            .add(STDoCollection::<C::VM, C::STPlanType, KIND>::new());
     }
 
     fn are_buckets_drained(&self, buckets: &[WorkBucketStage]) -> bool {

@@ -1,5 +1,6 @@
 use super::global::MarkCompact;
 use crate::policy::markcompactspace::MarkCompactSpace;
+use crate::policy::gc_work::TraceKind;
 use crate::policy::markcompactspace::{TRACE_KIND_FORWARD, TRACE_KIND_MARK};
 use crate::scheduler::gc_work::PlanProcessEdges;
 use crate::scheduler::gc_work::*;
@@ -45,9 +46,9 @@ impl<VM: VMBinding> GCWork<VM> for UpdateReferences<VM> {
         mmtk.state.prepare_for_stack_scanning();
         // Prepare common and base spaces for the 2nd round of transitive closure
         let plan_mut = unsafe { &mut *(self.plan as *mut MarkCompact<VM>) };
-        plan_mut.common.release(worker.tls, true);
+        plan_mut.common.release(worker, true);
         plan_mut.common.prepare(
-            worker.tls,
+            worker,
             true,
             mmtk.get_plan().get_total_pages(),
             mmtk.get_plan().get_reserved_pages(),

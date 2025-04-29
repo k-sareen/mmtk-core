@@ -208,11 +208,9 @@ impl<VM: VMBinding> Space<VM> for ImmixSpace<VM> {
         let mut blocks = vec![];
         let chunk_map = &self.chunk_map;
         for chunk in chunk_map.all_chunks() {
-            if chunk_map.get(chunk) == ChunkState::Allocated {
-                for block in chunk.iter_region::<Block>() {
-                    if block.get_state() != BlockState::Unallocated {
-                        blocks.push((block.start(), block.end() - block.start()));
-                    }
+            for block in chunk.iter_region::<Block>() {
+                if block.get_state() != BlockState::Unallocated {
+                    blocks.push((block.start(), block.end() - block.start()));
                 }
             }
         }
@@ -400,7 +398,12 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         &self.scheduler
     }
 
-    pub fn prepare(&mut self, major_gc: bool, plan_stats: StatsForDefrag) {
+    pub fn prepare(
+        &mut self,
+        worker: &mut GCWorker<VM>,
+        major_gc: bool,
+        plan_stats: StatsForDefrag,
+    ) {
         if major_gc {
             self.mark_state.on_global_prepare::<VM>();
 
@@ -418,21 +421,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             }
 
             // Prepare each block for GC
-            let threshold = self.defrag.defrag_spill_threshold.load(Ordering::Acquire);
-            // # Safety: ImmixSpace reference is always valid within this collection cycle.
-            let space = unsafe { &*(self as *const Self) };
-            let work_packets = self.chunk_map.generate_tasks(|chunk| {
-                Box::new(PrepareBlockState {
-                    space,
-                    chunk,
-                    defrag_threshold: if space.in_defrag() {
-                        Some(threshold)
-                    } else {
-                        None
-                    },
-                })
-            });
-            self.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
+            self.prepare_blocks(worker);
 
             if !super::BLOCK_ONLY {
                 self.line_mark_state.fetch_add(1, Ordering::AcqRel);
@@ -471,17 +460,59 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 None
             };
 
-            if let Some(scope) = maybe_scope {
-                let work_packets = self
-                    .chunk_map
-                    .generate_tasks(|chunk| Box::new(ClearVOBitsAfterPrepare { chunk, scope }));
-                self.scheduler.work_buckets[WorkBucketStage::ClearVOBits].bulk_add(work_packets);
+            if cfg!(not(feature = "single_worker")) {
+                if let Some(scope) = maybe_scope {
+                    let work_packets = self
+                        .chunk_map
+                        .generate_tasks(|chunk| Box::new(ClearVOBitsAfterPrepare { chunk, scope }));
+                    self.scheduler.work_buckets[WorkBucketStage::ClearVOBits].bulk_add(work_packets);
+                }
+            } else {
+                for chunk in self.chunk_map.all_chunks() {
+                    let mut work_packet = ClearVOBitsAfterPrepare { chunk, scope };
+                    work_packet.do_work(worker, worker.mmtk);
+                }
+            }
+        }
+    }
+
+    /// Prepare block state for GC
+    fn prepare_blocks(&self, worker: &mut GCWorker<VM>) {
+        let threshold = self.defrag.defrag_spill_threshold.load(Ordering::Acquire);
+        // # Safety: ImmixSpace reference is always valid within this collection cycle.
+        let space = unsafe { &*(self as *const Self) };
+
+        if cfg!(not(feature = "single_worker")) {
+            let work_packets = self.chunk_map.generate_tasks(|chunk| {
+                Box::new(PrepareBlockState {
+                    space,
+                    chunk,
+                    defrag_threshold: if space.in_defrag() {
+                        Some(threshold)
+                    } else {
+                        None
+                    },
+                })
+            });
+            self.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
+        } else {
+            for chunk in self.chunk_map.all_chunks() {
+                let mut work_packet = PrepareBlockState {
+                    space,
+                    chunk,
+                    defrag_threshold: if space.in_defrag() {
+                        Some(threshold)
+                    } else {
+                        None
+                    },
+                };
+                work_packet.do_work(worker, worker.mmtk);
             }
         }
     }
 
     /// Release for the immix space.
-    pub fn release(&mut self, major_gc: bool) {
+    pub fn release(&mut self, worker: &mut GCWorker<VM>, major_gc: bool) {
         // Update mark state
         self.mark_state.on_global_release::<VM>();
 
@@ -499,8 +530,12 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             self.reusable_blocks.reset();
         }
         // Sweep chunks and blocks
-        let work_packets = self.generate_sweep_tasks();
-        self.scheduler().work_buckets[WorkBucketStage::Release].bulk_add(work_packets);
+        if cfg!(not(feature = "single_worker")) {
+            let work_packets = self.generate_sweep_tasks();
+            self.scheduler().work_buckets[WorkBucketStage::Release].bulk_add(work_packets);
+        } else {
+            self.sweep_chunks(worker);
+        }
 
         self.lines_consumed.store(0, Ordering::Relaxed);
     }
@@ -520,6 +555,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         self.defrag.mark_histograms.lock().clear();
         // # Safety: ImmixSpace reference is always valid within this collection cycle.
         let space = unsafe { &*(self as *const Self) };
+        #[cfg(not(feature = "single_worker"))]
         let epilogue = Arc::new(FlushPageResource {
             space,
             counter: AtomicUsize::new(0),
@@ -528,11 +564,24 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             Box::new(SweepChunk {
                 space,
                 chunk,
+                #[cfg(not(feature = "single_worker"))]
                 epilogue: epilogue.clone(),
             })
         });
+        #[cfg(not(feature = "single_worker"))]
         epilogue.counter.store(tasks.len(), Ordering::SeqCst);
         tasks
+    }
+
+    fn sweep_chunks(&self, worker: &mut GCWorker<VM>) {
+        self.defrag.mark_histograms.lock().clear();
+        // # Safety: ImmixSpace reference is always valid within this collection cycle.
+        let space = unsafe { &*(self as *const Self) };
+        for chunk in self.chunk_map.all_chunks() {
+            let mut work_packet = SweepChunk { space, chunk };
+            work_packet.do_work(worker, worker.mmtk);
+        }
+        self.flush_page_resource();
     }
 
     /// Release a block.
@@ -880,6 +929,7 @@ struct SweepChunk<VM: VMBinding> {
     space: &'static ImmixSpace<VM>,
     chunk: Chunk,
     /// A destructor invoked when all `SweepChunk` packets are finished.
+    #[cfg(not(feature = "single_worker"))]
     epilogue: Arc<FlushPageResource<VM>>,
 }
 
@@ -939,6 +989,7 @@ impl<VM: VMBinding> GCWork<VM> for SweepChunk<VM> {
             self.space.chunk_map.set(self.chunk, ChunkState::Free)
         }
         self.space.defrag.add_completed_mark_histogram(histogram);
+        #[cfg(not(feature = "single_worker"))]
         self.epilogue.finish_one_work_packet();
     }
 }

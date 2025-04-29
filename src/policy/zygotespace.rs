@@ -159,11 +159,9 @@ impl<VM: VMBinding> Space<VM> for ZygoteSpace<VM> {
         let mut blocks = vec![];
         let chunk_map = &self.immix_space.chunk_map;
         for chunk in chunk_map.all_chunks() {
-            if chunk_map.get(chunk) == ChunkState::Allocated {
-                for block in chunk.iter_region::<Block>() {
-                    if block.get_state() != BlockState::Unallocated {
-                        blocks.push((block.start(), block.end() - block.start()));
-                    }
+            for block in chunk.iter_region::<Block>() {
+                if block.get_state() != BlockState::Unallocated {
+                    blocks.push((block.start(), block.end() - block.start()));
                 }
             }
         }
@@ -199,32 +197,51 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
         }
     }
 
-    pub fn prepare(&mut self, major_gc: bool, plan_stats: StatsForDefrag) {
+    pub fn prepare(
+        &mut self,
+        worker: &mut GCWorker<VM>,
+        major_gc: bool,
+        plan_stats: StatsForDefrag,
+    ) {
         if likely(self.created_zygote_space) {
             if major_gc {
                 // For major GCs we reset the mark and log bits for the Zygote space
                 // and then do a transitive closure
-                // SAFETY: ImmixSpace reference is always valid within this collection cycle.
-                let space = unsafe { &*(self.get_immix_space() as *const ImmixSpace<VM>) };
-                let work_packets = self.immix_space.chunk_map.generate_tasks(|chunk| {
-                    Box::new(ClearZygoteMetadata {
-                        space,
-                        chunk,
-                    })
-                });
-                self.immix_space.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
+                self.clear_zygote_metadata(worker);
             }
         } else {
-            self.immix_space.prepare(major_gc, plan_stats);
+            self.immix_space.prepare(worker, major_gc, plan_stats);
         }
     }
 
-    pub fn release(&mut self, major_gc: bool, is_pre_first_zygote_fork_gc: bool) {
+    /// Clear the mark and log bits for the Zygote space
+    fn clear_zygote_metadata(&self, worker: &mut GCWorker<VM>) {
+        // SAFETY: ImmixSpace reference is always valid within this collection cycle.
+        let space = unsafe { &*(self.get_immix_space() as *const ImmixSpace<VM>) };
+        if cfg!(not(feature = "single_worker")) {
+            let work_packets = self.immix_space.chunk_map.generate_tasks(|chunk| {
+                Box::new(ClearZygoteMetadata { space, chunk })
+            });
+            self.immix_space.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
+        } else {
+            for chunk in self.immix_space.chunk_map.all_chunks() {
+                let mut work_packet = ClearZygoteMetadata { space, chunk };
+                work_packet.do_work(worker, worker.mmtk);
+            }
+        }
+    }
+
+    pub fn release(
+        &mut self,
+        worker: &mut GCWorker<VM>,
+        major_gc: bool,
+        is_pre_first_zygote_fork_gc: bool,
+    ) {
         if likely(self.created_zygote_space) {
             // The Zygote space has been created -- nothing to be done
             return;
         } else {
-            self.immix_space.release(major_gc);
+            self.immix_space.release(worker, major_gc);
             if is_pre_first_zygote_fork_gc {
                 self.created_zygote_space = true;
             }

@@ -189,8 +189,8 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector>;
 
     /// Prepare the plan before a GC. This is invoked in an initial step in the GC.
-    /// This is invoked once per GC by one worker thread. `tls` is the worker thread that executes this method.
-    fn prepare(&mut self, tls: VMWorkerThread);
+    /// This is invoked once per GC by one worker thread.
+    fn prepare(&mut self, worker: &mut GCWorker<Self::VM>);
 
     /// Prepare a worker for a GC. Each worker has its own prepare method. This hook is for plan-specific
     /// per-worker preparation. This method is invoked once per worker by the worker thread passed as the argument.
@@ -198,8 +198,8 @@ pub trait Plan: 'static + HasSpaces + Sync + Downcast {
 
     /// Release the plan after transitive closure. A plan can implement this method to call each policy's release,
     /// or create any work packet that should be done in release.
-    /// This is invoked once per GC by one worker thread. `tls` is the worker thread that executes this method.
-    fn release(&mut self, tls: VMWorkerThread);
+    /// This is invoked once per GC by one worker thread.
+    fn release(&mut self, worker: &mut GCWorker<Self::VM>);
 
     /// Inform the plan about the end of a GC. It is guaranteed that there is no further work for this GC.
     /// This is invoked once per GC by one worker thread. `tls` is the worker thread that executes this method.
@@ -643,7 +643,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
 
     pub fn prepare(
         &mut self,
-        tls: VMWorkerThread,
+        worker: &mut GCWorker<VM>,
         full_heap: bool,
         total_pages: usize,
         reserved_pages: usize,
@@ -655,6 +655,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
         // self.nonmoving.prepare(full_heap);
         if let Some(zygote_space) = self.zygote.as_mut() {
             zygote_space.prepare(
+                worker,
                 full_heap,
                 crate::policy::immix::defrag::StatsForDefrag::new_from_stats(
                     total_pages,
@@ -663,10 +664,10 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 ),
             );
         }
-        self.base.prepare(tls, full_heap)
+        self.base.prepare(worker.tls, full_heap)
     }
 
-    pub fn release(&mut self, tls: VMWorkerThread, full_heap: bool) {
+    pub fn release(&mut self, worker: &mut GCWorker<VM>, full_heap: bool) {
         self.immortal.release();
         self.los.release(full_heap);
         self.nonmoving.release();
@@ -675,6 +676,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 let is_pre_first_zygote_fork_gc =
                     self.base.global_state.is_pre_first_zygote_fork_gc();
                 zygote_space.release(
+                    worker,
                     full_heap,
                     is_pre_first_zygote_fork_gc,
                 );
@@ -684,7 +686,7 @@ impl<VM: VMBinding> CommonPlan<VM> {
                 }
             }
         }
-        self.base.release(tls, full_heap)
+        self.base.release(worker.tls, full_heap)
     }
 
     pub fn can_pin_objects_in_default_space(&self) -> bool {

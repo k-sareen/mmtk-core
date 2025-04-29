@@ -62,7 +62,7 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
     /// Prepare Gen. This should be called by a single thread in GC prepare work.
     pub fn prepare(
         &mut self,
-        tls: VMWorkerThread,
+        worker: &mut GCWorker<VM>,
         total_pages: usize,
         reserved_pages: usize,
         collection_reserved_pages: usize,
@@ -72,7 +72,7 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
             self.full_heap_gc_count.lock().unwrap().inc();
         }
         self.common.prepare(
-            tls,
+            worker,
             full_heap,
             total_pages,
             reserved_pages,
@@ -84,9 +84,9 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
     }
 
     /// Release Gen. This should be called by a single thread in GC release work.
-    pub fn release(&mut self, tls: VMWorkerThread) {
+    pub fn release(&mut self, worker: &mut GCWorker<VM>) {
         let full_heap = !self.is_current_gc_nursery();
-        self.common.release(tls, full_heap);
+        self.common.release(worker, full_heap);
         self.nursery.release();
     }
 

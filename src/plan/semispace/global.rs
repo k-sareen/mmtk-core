@@ -95,7 +95,7 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
             >(self, self.common().get_zygote().get_immix_space(), scheduler);
         } else {
             use crate::policy::gc_work::DEFAULT_TRACE;
-            scheduler.schedule_common_work::<SSGCWorkContext<VM, DEFAULT_TRACE>>(self);
+            scheduler.schedule_common_work::<SSGCWorkContext<VM, DEFAULT_TRACE>, DEFAULT_TRACE>(self);
         }
     }
 
@@ -107,9 +107,9 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         }
     }
 
-    fn prepare(&mut self, tls: VMWorkerThread) {
+    fn prepare(&mut self, worker: &mut GCWorker<VM>) {
         self.common.prepare(
-            tls,
+            worker,
             true,
             self.get_total_pages(),
             self.get_reserved_pages(),
@@ -142,8 +142,8 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         }
     }
 
-    fn release(&mut self, tls: VMWorkerThread) {
-        self.common.release(tls, true);
+    fn release(&mut self, worker: &mut GCWorker<VM>) {
+        self.common.release(worker, true);
         // release the collected region
         if likely(!self.common().is_zygote()) {
             self.fromspace().release();

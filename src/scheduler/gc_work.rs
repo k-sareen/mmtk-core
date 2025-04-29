@@ -58,7 +58,7 @@ impl<C: GCWorkContext> GCWork<C::VM> for Prepare<C> {
         trace!("Prepare Global");
         // We assume this is the only running work packet that accesses plan at the point of execution
         let plan_mut: &mut C::PlanType = unsafe { &mut *(self.plan as *const _ as *mut _) };
-        plan_mut.prepare(worker.tls);
+        plan_mut.prepare(worker);
 
         if plan_mut.constraints().needs_prepare_mutator {
             let prepare_mutator_packets = <C::VM as VMBinding>::VMActivePlan::mutators()
@@ -138,7 +138,7 @@ impl<C: GCWorkContext + 'static> GCWork<C::VM> for Release<C> {
         // We assume this is the only running work packet that accesses plan at the point of execution
 
         let plan_mut: &mut C::PlanType = unsafe { &mut *(self.plan as *const _ as *mut _) };
-        plan_mut.release(worker.tls);
+        plan_mut.release(worker);
 
         let release_mutator_packets = <C::VM as VMBinding>::VMActivePlan::mutators()
             .map(|mutator| Box::new(ReleaseMutator::<C::VM>::new(mutator)) as _)

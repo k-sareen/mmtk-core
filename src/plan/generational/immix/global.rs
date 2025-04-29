@@ -107,12 +107,13 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
     #[allow(clippy::if_same_then_else)]
     #[allow(clippy::branches_sharing_code)]
     fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<Self::VM>) {
+        use crate::policy::gc_work::DEFAULT_TRACE;
         let is_full_heap = self.requires_full_heap_collection();
         probe!(mmtk, gen_full_heap, is_full_heap);
 
         if !is_full_heap {
             info!("Nursery GC");
-            scheduler.schedule_common_work::<GenImmixNurseryGCWorkContext<VM>>(self);
+            scheduler.schedule_common_work::<GenImmixNurseryGCWorkContext<VM>, DEFAULT_TRACE>(self);
         } else {
             info!("Full heap GC");
             let immix_space = if unlikely(self.common().is_zygote()) {
@@ -132,27 +133,28 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
         &super::mutator::ALLOCATOR_MAPPING
     }
 
-    fn prepare(&mut self, tls: VMWorkerThread) {
+    fn prepare(&mut self, worker: &mut GCWorker<VM>) {
         let full_heap = !self.gen.is_current_gc_nursery();
         self.gen.prepare(
-            tls,
+            worker,
             self.get_total_pages(),
             self.get_reserved_pages(),
             self.get_collection_reserved_pages(),
         );
         if full_heap {
             self.immix_space.prepare(
+                worker,
                 full_heap,
                 crate::policy::immix::defrag::StatsForDefrag::new(self),
             );
         }
     }
 
-    fn release(&mut self, tls: VMWorkerThread) {
+    fn release(&mut self, worker: &mut GCWorker<VM>) {
         let full_heap = !self.gen.is_current_gc_nursery();
-        self.gen.release(tls);
+        self.gen.release(worker);
         if full_heap {
-            self.immix_space.release(full_heap);
+            self.immix_space.release(worker, full_heap);
         }
         self.last_gc_was_full_heap
             .store(full_heap, Ordering::Relaxed);

@@ -124,7 +124,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         if !is_full_heap {
             info!("Nursery GC");
             // nursery GC -- we schedule it
-            scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>>(self);
+            scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>, DEFAULT_TRACE>(self);
         } else {
             info!("Full heap GC");
             use crate::plan::immix::Immix;
@@ -149,10 +149,11 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         &super::mutator::ALLOCATOR_MAPPING
     }
 
-    fn prepare(&mut self, tls: crate::util::VMWorkerThread) {
+    fn prepare(&mut self, worker: &mut GCWorker<VM>) {
         if self.is_current_gc_nursery() {
             // Prepare both large object space and immix space
             self.immix.immix_space.prepare(
+                worker,
                 false,
                 crate::policy::immix::defrag::StatsForDefrag::new(self),
             );
@@ -160,16 +161,16 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
             // self.immix.common.nonmoving.prepare(false);
         } else {
             self.full_heap_gc_count.lock().unwrap().inc();
-            self.immix.prepare(tls);
+            self.immix.prepare(worker);
         }
     }
 
-    fn release(&mut self, tls: crate::util::VMWorkerThread) {
+    fn release(&mut self, worker: &mut GCWorker<VM>) {
         if self.is_current_gc_nursery() {
-            self.immix.immix_space.release(false);
+            self.immix.immix_space.release(worker, false);
             self.immix.common.los.release(false);
         } else {
-            self.immix.release(tls);
+            self.immix.release(worker);
         }
     }
 
