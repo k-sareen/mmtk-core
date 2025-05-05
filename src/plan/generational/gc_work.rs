@@ -101,9 +101,18 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>, const KIND
     for GenNurseryProcessEdges<VM, P, KIND>
 {
     fn enqueue(&mut self, object: ObjectReference) {
+        #[cfg(feature = "dont_enqueue_vm_space_objects")]
+        use crate::policy::space::Space;
         let tls = self.worker().tls;
         let mut closure = |slot: VM::VMSlot| {
-            let Some(_) = slot.load() else { return };
+            let Some(_obj) = slot.load() else { return };
+            // Don't enqueue slots which have objects in the VM space
+            // since for generational GCs we will scan all VM space objects
+            // who have been modified (i.e. tripped the write barrier)
+            #[cfg(feature = "dont_enqueue_vm_space_objects")]
+            if self.plan.base().vm_space.in_space(_obj) {
+                return;
+            }
             self.slots.push(slot);
             self.pushes += 1;
             if self.slots.len() >= Self::CAPACITY

@@ -1009,7 +1009,7 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
     }
 
     fn process_slot(&mut self, slot: SlotOf<Self>) {
-        // use crate::policy::space::Space;
+        use crate::policy::space::Space;
         let Some(object) = slot.load() else {
             // Skip slots that are not holding an object reference.
             return;
@@ -1023,9 +1023,10 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
             object,
             slot,
         );
-        // if self.plan.base().vm_space.in_space(object) {
-        //     return;
-        // }
+        // Re-order cascading if to put VM space check first
+        if self.plan.base().vm_space.in_space(object) {
+            return;
+        }
         let new_object = self.trace_object(object);
 
         // use crate::policy::space::Space;
@@ -1083,13 +1084,15 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
     for PlanProcessEdges<VM, P, KIND>
 {
     fn enqueue(&mut self, object: ObjectReference) {
+        #[cfg(feature = "dont_enqueue_vm_space_objects")]
         use crate::policy::space::Space;
         let tls = self.worker().tls;
         let mut closure = |slot: VM::VMSlot| {
-            let Some(obj) = slot.load() else { return };
+            let Some(_obj) = slot.load() else { return };
             // Don't enqueue slots which have objects in the VM space
             // Since we scan all objects in VM space
-            if self.plan.base().vm_space.in_space(obj) {
+            #[cfg(feature = "dont_enqueue_vm_space_objects")]
+            if self.plan.base().vm_space.in_space(_obj) {
                 return;
             }
             self.slots.push(slot);

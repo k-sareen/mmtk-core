@@ -277,7 +277,12 @@ where
     }
 
     fn process_slot(&mut self, slot: VM::VMSlot) {
+        use crate::policy::space::Space;
         let Some(object) = slot.load() else { return };
+        // Re-order cascading if to put VM space check first
+        if self.plan.base().vm_space.in_space(object) {
+            return;
+        }
         let new_object = self.trace_object(object);
         if P::may_move_objects::<KIND>() && new_object != object {
             slot.store(new_object);
@@ -300,11 +305,13 @@ where
     fn enqueue(&mut self, object: ObjectReference) {
         let tls = self.worker().tls;
         let mut closure = |slot: VM::VMSlot| {
+            #[cfg(feature = "dont_enqueue_vm_space_objects")]
             use crate::policy::space::Space;
-            let Some(obj) = slot.load() else { return };
+            let Some(_obj) = slot.load() else { return };
             // Don't enqueue slots which have objects in the VM space
             // Since we scan all objects in VM space
-            if self.plan.base().vm_space.in_space(obj) {
+            #[cfg(feature = "dont_enqueue_vm_space_objects")]
+            if self.plan.base().vm_space.in_space(_obj) {
                 return;
             }
             self.slots.push(slot);

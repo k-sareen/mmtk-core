@@ -122,14 +122,17 @@ impl<E: ProcessEdgesWork> SlotVisitor<SlotOf<E>> for ObjectsClosure<'_, E> {
                 slot.load()
             );
         }
-        use crate::plan::Plan;
-        use crate::policy::space::Space;
-        use crate::vm::slot::Slot;
-        let Some(obj) = slot.load() else { return };
-        // Don't enqueue slots which have objects in the VM space
-        // Since we scan all objects in VM space
-        if self.worker.mmtk.get_plan().base().vm_space.in_space(obj) {
-            return;
+        #[cfg(feature = "dont_enqueue_vm_space_objects")]
+        {
+            use crate::plan::Plan;
+            use crate::policy::space::Space;
+            use crate::vm::slot::Slot;
+            let Some(obj) = slot.load() else { return };
+            // Don't enqueue slots which have objects in the VM space
+            // Since we scan all objects in VM space
+            if self.worker.mmtk.get_plan().base().vm_space.in_space(obj) {
+                return;
+            }
         }
         self.buffer.push(slot);
         if self.buffer.is_full() {
