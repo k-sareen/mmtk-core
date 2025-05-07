@@ -140,7 +140,8 @@ pub trait RootsWorkFactory<SL: Slot>: Clone + Send + 'static {
 
 #[cfg(feature = "single_worker")]
 pub trait ObjectGraphTraversal<SL: Slot> {
-    fn report_roots(&mut self, root_slots: Vec<SL>);
+    fn get_mark_stack(&mut self) -> &mut Vec<SL>;
+    fn report_roots(&mut self, len: usize);
 }
 
 /// VM-specific methods for scanning roots/objects.

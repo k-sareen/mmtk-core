@@ -101,6 +101,8 @@ pub struct GCWorker<VM: VMBinding> {
     pub shared: Arc<GCWorkerShared<VM>>,
     /// Local work packet queue.
     pub local_work_buffer: crossbeam_deque::Worker<Box<dyn GCWork<VM>>>,
+    #[cfg(feature = "single_worker")]
+    pub mark_stack: Vec<VM::VMSlot>,
 }
 
 unsafe impl<VM: VMBinding> Sync for GCWorkerShared<VM> {}
@@ -148,6 +150,8 @@ impl<VM: VMBinding> GCWorker<VM> {
             mmtk,
             shared,
             local_work_buffer,
+            #[cfg(feature = "single_worker")]
+            mark_stack: Vec::with_capacity(64 * 1024),
         }
     }
 

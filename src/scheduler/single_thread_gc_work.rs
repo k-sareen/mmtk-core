@@ -242,7 +242,6 @@ pub(crate) struct STObjectGraphTraversalClosure<
 > {
     plan: &'static P,
     worker: *mut GCWorker<VM>,
-    slots: Vec<VM::VMSlot>,
 }
 
 impl<VM, P, const KIND: TraceKind> STObjectGraphTraversalClosure<VM, P, KIND>
@@ -254,7 +253,6 @@ where
         Self {
             plan: mmtk.get_plan().downcast_ref::<P>().unwrap(),
             worker,
-            slots: Vec::new(),
         }
     }
 
@@ -263,7 +261,7 @@ where
     }
 
     pub fn is_empty(&self) -> bool {
-        self.slots.is_empty()
+        self.worker().mark_stack.is_empty()
     }
 
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
@@ -290,7 +288,7 @@ where
     }
 
     pub fn process_slots(&mut self) {
-        while let Some(slot) = self.slots.pop() {
+        while let Some(slot) = self.worker().mark_stack.pop() {
             self.process_slot(slot);
         }
     }
@@ -314,7 +312,7 @@ where
             if self.plan.base().vm_space.in_space(_obj) {
                 return;
             }
-            self.slots.push(slot);
+            self.worker().mark_stack.push(slot);
         };
         <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
         // self.plan.base().global_state.scan_object_count.fetch_add(1, Ordering::Relaxed);
@@ -339,9 +337,17 @@ where
     VM: VMBinding,
     P: Plan<VM = VM> + PlanTraceObject<VM>,
 {
-    fn report_roots(&mut self, root_slots: Vec<VM::VMSlot>) {
-        assert!(self.slots.is_empty());
-        self.slots = Vec::from(root_slots);
+    fn get_mark_stack(&mut self) -> &mut Vec<VM::VMSlot> {
+        &mut self.worker().mark_stack
+    }
+
+    fn report_roots(&mut self, len: usize) {
+        assert!(self.worker().mark_stack.is_empty());
+        // SAFETY: We are the only thread accessing the mark stack so we can
+        // set the length
+        unsafe {
+            self.worker().mark_stack.set_len(len);
+        }
         self.process_slots();
     }
 }
@@ -353,7 +359,7 @@ where
     P: Plan<VM = VM> + PlanTraceObject<VM>,
 {
     fn drop(&mut self) {
-        assert!(self.slots.is_empty());
+        assert!(self.worker().mark_stack.is_empty());
     }
 }
 
