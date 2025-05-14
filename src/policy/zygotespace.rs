@@ -361,7 +361,11 @@ impl<VM: VMBinding> Space<VM> for Option<ZygoteSpace<VM>> {
 
 impl<VM: VMBinding> SFT for Option<ZygoteSpace<VM>> {
     fn name(&self) -> &'static str {
-        self.as_ref().unwrap().get_name()
+        if let Some(space) = self.as_ref() {
+            space.name()
+        } else {
+            "None"
+        }
     }
 
     fn get_forwarded_object(&self, object: ObjectReference) -> Option<ObjectReference> {
