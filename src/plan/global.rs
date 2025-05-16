@@ -811,4 +811,6 @@ pub enum AllocationSemantics {
     LargeCode = 5,
     /// Non moving objects will not be moved by GC.
     NonMoving = 6,
+    /// Los but for primitive arrays
+    PrimitiveLos = 7,
 }
