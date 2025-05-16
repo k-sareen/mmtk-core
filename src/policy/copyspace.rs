@@ -231,6 +231,8 @@ impl<VM: VMBinding> CopySpace<VM> {
             // Poison the memory if the feature is enabled.
             #[cfg(feature = "poison_on_release")]
             crate::util::memory::set(start, 0xbc, size);
+            #[cfg(feature = "eager_zeroing")]
+            crate::util::memory::zero(start, size);
         }
 
         unsafe {

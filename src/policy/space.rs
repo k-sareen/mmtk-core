@@ -185,8 +185,12 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     }
 
                     // TODO: Concurrent zeroing
-                    if self.common().zeroed && *(self.get_gc_trigger().options.plan) != PlanSelector::NoGC {
-                        memory::zero(res.start, bytes);
+                    #[cfg(not(feature = "eager_zeroing"))]
+                    {
+                        let plan = *(self.get_gc_trigger().options.plan);
+                        if self.common().zeroed && plan != PlanSelector::NoGC {
+                            memory::zero(res.start, bytes);
+                        }
                     }
 
                     // Some assertions
