@@ -57,6 +57,8 @@ pub struct GlobalState {
     /// A counteer that keeps tracks of the number of bytes allocated by malloc
     #[cfg(feature = "malloc_counted_size")]
     pub(crate) malloc_bytes: AtomicUsize,
+    /// Inside benchmark harness
+    pub(crate) inside_harness: AtomicBool,
     /// This stores the live bytes and the used bytes (by pages) for each space in last GC. This counter is only updated in the GC release phase.
     pub(crate) live_bytes_in_last_gc: AtomicRefCell<HashMap<&'static str, LiveBytesStats>>,
 }
@@ -252,6 +254,7 @@ impl Default for GlobalState {
             scan_object_count: AtomicUsize::new(0),
             #[cfg(feature = "malloc_counted_size")]
             malloc_bytes: AtomicUsize::new(0),
+            inside_harness: AtomicBool::new(false),
             live_bytes_in_last_gc: AtomicRefCell::new(HashMap::new()),
         }
     }
