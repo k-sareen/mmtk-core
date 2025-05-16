@@ -156,7 +156,9 @@ impl<VM: VMBinding> Space<VM> for CopySpace<VM> {
     }
 
     fn iterate_allocated_regions(&self) -> Vec<(Address, usize)> {
-        self.pr.iterate_allocated_regions().collect::<Vec<(Address, usize)>>()
+        self.pr
+            .iterate_allocated_regions()
+            .collect::<Vec<(Address, usize)>>()
     }
 }
 
@@ -273,8 +275,7 @@ impl<VM: VMBinding> CopySpace<VM> {
         trace!("checking if object is being forwarded");
         if let Some(_) = potential_fwd {
             trace!("... yes it is");
-            let new_object =
-                object_forwarding::spin_and_get_forwarded_object::<VM>(object);
+            let new_object = object_forwarding::spin_and_get_forwarded_object::<VM>(object);
             trace!("Returning");
             new_object
         } else {
