@@ -70,9 +70,11 @@ pub struct PerfEventOptions {
 #[cfg(feature = "perf_counter")]
 const DEFAULT_PERF_EVENTS: PerfEventOptions = PerfEventOptions {
     events: &[
+        (PerfEventKind::Software(PerfEventSoftware::TASK_CLOCK), "PERF_COUNT_SW_TASK_CLOCK", 0, -1),
         (PerfEventKind::Hardware(PerfEventHardware::CPU_CYCLES), "PERF_COUNT_HW_CPU_CYCLES", 0, -1),
         (PerfEventKind::Hardware(PerfEventHardware::INSTRUCTIONS), "PERF_COUNT_HW_INSTRUCTIONS", 0, -1),
-        (PerfEventKind::Software(PerfEventSoftware::TASK_CLOCK), "PERF_COUNT_SW_TASK_CLOCK", 0, -1),
+        (PerfEventKind::Hardware(PerfEventHardware::STALLED_CYCLES_FRONTEND), "PERF_COUNT_HW_STALLED_CYCLES_FRONTEND", 0, -1),
+        (PerfEventKind::Hardware(PerfEventHardware::STALLED_CYCLES_BACKEND), "PERF_COUNT_HW_STALLED_CYCLES_BACKEND", 0, -1),
         (PerfEventKind::Software(PerfEventSoftware::PAGE_FAULTS), "PERF_COUNT_SW_PAGE_FAULTS", 0, -1),
     ],
 };
