@@ -85,6 +85,10 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
         required_pages: usize,
         tls: VMThread,
     ) -> Result<PRAllocResult, PRAllocFail> {
+        let alloc_event = atrace::begin_scoped_event(
+            atrace::AtraceTag::Dalvik,
+            "FreeListPageResource::alloc_pages",
+        );
         let mut sync = self.sync.lock().unwrap();
         let mut new_chunk = false;
         let mut page_offset = sync.free_list.alloc(required_pages as _);
@@ -148,6 +152,10 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
                 use crate::util::memory;
                 use crate::util::memory::MmapAnnotation;
 
+                let mmap_event = atrace::begin_scoped_event(
+                    atrace::AtraceTag::Dalvik,
+                    "mmap Pages and Metadata",
+                );
                 let bytes = num_chunks << LOG_BYTES_IN_CHUNK;
                 let pages = num_chunks << (LOG_BYTES_IN_CHUNK - LOG_BYTES_IN_PAGE as usize);
                 // Mmap the pages and the side metadata, and handle error. In case of any error,

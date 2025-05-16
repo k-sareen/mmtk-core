@@ -146,6 +146,10 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
             use crate::util::memory;
             use crate::util::memory::MmapAnnotation;
 
+            let mmap_event = atrace::begin_scoped_event(
+                atrace::AtraceTag::Dalvik,
+                "mmap Pages and Metadata",
+            );
             let bytes = num_chunks << LOG_BYTES_IN_CHUNK;
             let pages = num_chunks << (LOG_BYTES_IN_CHUNK - LOG_BYTES_IN_PAGE as usize);
             // Mmap the pages and the side metadata, and handle error. In case of any error,

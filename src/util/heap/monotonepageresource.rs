@@ -75,6 +75,7 @@ impl<VM: VMBinding> PageResource<VM> for MonotonePageResource<VM> {
         required_pages: usize,
         tls: VMThread,
     ) -> Result<PRAllocResult, PRAllocFail> {
+        let alloc_event = atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "MonotonePageResource::alloc_pages");
         debug!(
             "In MonotonePageResource, reserved_pages = {}, required_pages = {}",
             reserved_pages, required_pages
@@ -174,6 +175,10 @@ impl<VM: VMBinding> PageResource<VM> for MonotonePageResource<VM> {
                     use crate::util::memory;
                     use crate::util::memory::MmapAnnotation;
 
+                    let mmap_event = atrace::begin_scoped_event(
+                        atrace::AtraceTag::Dalvik,
+                        "mmap Pages and Metadata",
+                    );
                     let bytes = num_chunks << LOG_BYTES_IN_CHUNK;
                     let pages = num_chunks << (LOG_BYTES_IN_CHUNK - LOG_BYTES_IN_PAGE as usize);
                     // Mmap the pages and the side metadata, and handle error. In case of any error,
