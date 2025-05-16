@@ -5,6 +5,7 @@ use super::layout::VMMap;
 use super::pageresource::{PRAllocFail, PRAllocResult};
 use super::PageResource;
 use crate::mmtk::MMAPPER;
+use crate::policy::space::Space;
 use crate::util::address::Address;
 use crate::util::alloc::embedded_meta_data::*;
 use crate::util::conversions;
@@ -79,7 +80,7 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
 
     fn alloc_pages(
         &self,
-        space_descriptor: SpaceDescriptor,
+        space: &dyn Space<VM>,
         reserved_pages: usize,
         required_pages: usize,
         tls: VMThread,
@@ -87,9 +88,15 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
         let mut sync = self.sync.lock().unwrap();
         let mut new_chunk = false;
         let mut page_offset = sync.free_list.alloc(required_pages as _);
+        let mut growed_chunks = 0;
         if page_offset == freelist::FAILURE && self.common.growable {
+            growed_chunks = crate::policy::space::required_chunks(required_pages);
             page_offset = unsafe {
-                self.allocate_contiguous_chunks(space_descriptor, required_pages, &mut sync)
+                self.allocate_contiguous_chunks(
+                    space.common().descriptor,
+                    required_pages,
+                    &mut sync,
+                )
             };
             new_chunk = true;
         }
@@ -134,6 +141,40 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
                 }
             }
         };
+        if new_chunk {
+            let mmap_closure = |start: Address, num_chunks: usize| {
+                use crate::util::constants::LOG_BYTES_IN_PAGE;
+                use crate::util::heap::layout::vm_layout::LOG_BYTES_IN_CHUNK;
+                use crate::util::memory;
+                use crate::util::memory::MmapAnnotation;
+
+                let bytes = num_chunks << LOG_BYTES_IN_CHUNK;
+                let pages = num_chunks << (LOG_BYTES_IN_CHUNK - LOG_BYTES_IN_PAGE as usize);
+                // Mmap the pages and the side metadata, and handle error. In case of any error,
+                // we will either call back to the VM for OOM, or simply panic.
+                if let Err(mmap_error) = space
+                    .common()
+                    .mmapper
+                    .ensure_mapped(
+                        start,
+                        pages,
+                        space.common().mmap_strategy(),
+                        &memory::MmapAnnotation::Space {
+                            name: space.get_name(),
+                        },
+                    )
+                    .and(space.common().metadata.try_map_metadata_space(
+                        start,
+                        bytes,
+                        space.get_name(),
+                    ))
+                {
+                    memory::handle_mmap_error::<VM>(mmap_error, tls, start, bytes);
+                }
+            };
+            mmap_closure(rtn, growed_chunks);
+            space.grow_space(rtn, growed_chunks << LOG_BYTES_IN_CHUNK, true);
+        }
         Result::Ok(PRAllocResult {
             start: rtn,
             pages: required_pages,

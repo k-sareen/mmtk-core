@@ -1,5 +1,6 @@
 use super::pageresource::{PRAllocFail, PRAllocResult};
 use super::{FreeListPageResource, PageResource};
+use crate::policy::space::Space;
 use crate::util::address::Address;
 use crate::util::constants::*;
 use crate::util::heap::layout::vm_layout::*;
@@ -44,12 +45,12 @@ impl<VM: VMBinding, B: Region> PageResource<VM> for BlockPageResource<VM, B> {
 
     fn alloc_pages(
         &self,
-        space_descriptor: SpaceDescriptor,
+        space: &dyn Space<VM>,
         reserved_pages: usize,
         required_pages: usize,
         tls: VMThread,
     ) -> Result<PRAllocResult, PRAllocFail> {
-        self.alloc_pages_fast(space_descriptor, reserved_pages, required_pages, tls)
+        self.alloc_pages_fast(space, reserved_pages, required_pages, tls)
     }
 
     fn get_available_physical_pages(&self) -> usize {
@@ -93,7 +94,7 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
     /// Grow contiguous space
     fn alloc_pages_slow_sync(
         &self,
-        space_descriptor: SpaceDescriptor,
+        space: &dyn Space<VM>,
         reserved_pages: usize,
         required_pages: usize,
         tls: VMThread,
@@ -110,7 +111,10 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
         }
         // Grow space (a chunk at a time)
         // 1. Grow space
-        let start: Address = match self.flpr.allocate_one_chunk_no_commit(space_descriptor) {
+        let start: Address = match self
+            .flpr
+            .allocate_one_chunk_no_commit(space.common().descriptor)
+        {
             Ok(result) => result.start,
             err => return err,
         };
@@ -136,6 +140,38 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
         self.block_queue.add_global_array(array);
         // Finish slow-allocation
         self.commit_pages(reserved_pages, required_pages, tls);
+        let mmap_closure = |start: Address, num_chunks: usize| {
+            use crate::util::constants::LOG_BYTES_IN_PAGE;
+            use crate::util::heap::layout::vm_layout::LOG_BYTES_IN_CHUNK;
+            use crate::util::memory;
+            use crate::util::memory::MmapAnnotation;
+
+            let bytes = num_chunks << LOG_BYTES_IN_CHUNK;
+            let pages = num_chunks << (LOG_BYTES_IN_CHUNK - LOG_BYTES_IN_PAGE as usize);
+            // Mmap the pages and the side metadata, and handle error. In case of any error,
+            // we will either call back to the VM for OOM, or simply panic.
+            if let Err(mmap_error) = space
+                .common()
+                .mmapper
+                .ensure_mapped(
+                    start,
+                    pages,
+                    space.common().mmap_strategy(),
+                    &memory::MmapAnnotation::Space {
+                        name: space.get_name(),
+                    },
+                )
+                .and(space.common().metadata.try_map_metadata_space(
+                    start,
+                    bytes,
+                    space.get_name(),
+                ))
+            {
+                memory::handle_mmap_error::<VM>(mmap_error, tls, start, bytes);
+            }
+        };
+        mmap_closure(first_block, /* num_chunks= */ 1);
+        space.grow_space(first_block, 1 << LOG_BYTES_IN_CHUNK, true);
         Result::Ok(PRAllocResult {
             start: first_block,
             pages: required_pages,
@@ -146,7 +182,7 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
     /// Allocate a block
     fn alloc_pages_fast(
         &self,
-        space_descriptor: SpaceDescriptor,
+        space: &dyn Space<VM>,
         reserved_pages: usize,
         required_pages: usize,
         tls: VMThread,
@@ -163,7 +199,7 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
             });
         }
         // Slow-path：we need to grow space
-        self.alloc_pages_slow_sync(space_descriptor, reserved_pages, required_pages, tls)
+        self.alloc_pages_slow_sync(space, reserved_pages, required_pages, tls)
     }
 
     pub fn release_block(&self, block: B) {

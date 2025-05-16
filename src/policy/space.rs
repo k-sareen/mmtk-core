@@ -120,16 +120,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
             unsafe { Address::zero() }
         } else {
             debug!("Collection not required");
-
-            // We need this lock: Othrewise, it is possible that one thread acquires pages in a new chunk, but not yet
-            // set SFT for it (in grow_space()), and another thread acquires pages in the same chunk, which is not
-            // a new chunk so grow_space() won't be called on it. The second thread could return a result in the chunk before
-            // its SFT is properly set.
-            // We need to minimize the scope of this lock for performance when we have many threads (mutator threads, or GC threads with copying allocators).
-            // See: https://github.com/mmtk/mmtk-core/issues/610
-            let lock = self.common().acquire_lock.lock().unwrap();
-
-            match pr.get_new_pages(self.common().descriptor, pages_reserved, pages, tls) {
+            match pr.get_new_pages(self.as_space(), pages_reserved, pages, tls) {
                 Ok(res) => {
                     debug!(
                         "Got new pages {} ({} pages) for {} in chunk {}, new_chunk? {}",
@@ -140,50 +131,6 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                         res.new_chunk
                     );
                     let bytes = conversions::pages_to_bytes(res.pages);
-
-                    let mmap = || {
-                        // Mmap the pages and the side metadata, and handle error. In case of any error,
-                        // we will either call back to the VM for OOM, or simply panic.
-                        if let Err(mmap_error) = self
-                            .common()
-                            .mmapper
-                            .ensure_mapped(
-                                res.start,
-                                res.pages,
-                                self.common().mmap_strategy(),
-                                &memory::MmapAnnotation::Space {
-                                    name: self.get_name(),
-                                },
-                            )
-                            .and(self.common().metadata.try_map_metadata_space(
-                                res.start,
-                                bytes,
-                                self.get_name(),
-                            ))
-                        {
-                            memory::handle_mmap_error::<VM>(mmap_error, tls, res.start, bytes);
-                        }
-                    };
-                    let grow_space = || {
-                        self.grow_space(res.start, bytes, res.new_chunk);
-                    };
-
-                    // The scope of the lock is important in terms of performance when we have many allocator threads.
-                    if SFT_MAP.get_side_metadata().is_some() {
-                        // If the SFT map uses side metadata, so we have to initialize side metadata first.
-                        mmap();
-                        // then grow space, which will use the side metadata we mapped above
-                        grow_space();
-                        // then we can drop the lock after grow_space()
-                        drop(lock);
-                    } else {
-                        // In normal cases, we can drop lock immediately after grow_space()
-                        grow_space();
-                        drop(lock);
-                        // and map side metadata without holding the lock
-                        mmap();
-                    }
-
                     // TODO: Concurrent zeroing
                     #[cfg(not(feature = "eager_zeroing"))]
                     {
@@ -223,7 +170,6 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     res.start
                 }
                 Err(_) => {
-                    drop(lock); // drop the lock immediately
 
                     // We thought we had memory to allocate, but somehow failed the allocation. Will force a GC.
                     assert!(
