@@ -25,8 +25,6 @@ pub struct PowerStats {
     pub channel_infos: Vec<PowerStatsChannel>,
     pub reading: Vec<PowerStatsEnergyMeasurement>,
     prev_reading: Vec<PowerStatsEnergyMeasurement>,
-    pub reading_stw: Vec<PowerStatsEnergyMeasurement>,
-    prev_reading_stw: Vec<PowerStatsEnergyMeasurement>,
 }
 
 /// Find the earliest position in `text` (starting at `start`) of any character in `chars`.
@@ -106,8 +104,6 @@ impl PowerStats {
             channel_infos: Vec::new(),
             reading: Vec::new(),
             prev_reading: Vec::new(),
-            reading_stw: Vec::new(),
-            prev_reading_stw: Vec::new(),
         }
     }
 
@@ -115,10 +111,6 @@ impl PowerStats {
         self.find_iio_energy_meter_nodes(device_names);
         self.parse_enabled_rails();
         self.reading.resize(
-            self.channel_infos.len(),
-            PowerStatsEnergyMeasurement::default(),
-        );
-        self.reading_stw.resize(
             self.channel_infos.len(),
             PowerStatsEnergyMeasurement::default(),
         );
@@ -313,62 +305,31 @@ impl PowerStats {
         self.read_energy_meter(&[]);
     }
 
-    pub fn start_gc(&mut self) {
-        let energy_stats = self.read_energy_meter(&[]);
-        self.prev_reading_stw = energy_stats;
-    }
-
-    pub fn end_gc(&mut self) {
-        let mut energy_stats = self.read_energy_meter(&[]);
-        for i in 0..energy_stats.len() {
-            energy_stats[i].energy_uW_s -= self.prev_reading_stw[i].energy_uW_s;
-            energy_stats[i].duration_ms -= self.prev_reading_stw[i].duration_ms;
-            self.reading_stw[i].energy_uW_s += energy_stats[i].energy_uW_s;
-            self.reading_stw[i].duration_ms += energy_stats[i].duration_ms;
-        }
-    }
-
     pub fn print_column_names(&self, output_string: &mut String) {
         for channel_info in self.get_energy_meter_info() {
             output_string.push_str(
                 format!(
-                    "{}.total.energy\t{}.avg.power\t{}.other.energy\t{}.other.avg.power\t{}.stw.energy\t{}.stw.avg.power\t",
-                    channel_info.name, channel_info.name,
-                    channel_info.name, channel_info.name,
-                    channel_info.name, channel_info.name,
+                    "{}.energy\t{}.power\t",
+                    channel_info.name, channel_info.name
                 )
                 .as_str(),
             );
         }
-        output_string.push_str("total.energy\tavg.power\t");
+        output_string.push_str("total.energy\ttotal.power\t");
     }
 
     pub fn print_stats(&self, output_string: &mut String) {
-        let mut avg_power = 0_f64;
+        let mut total_power = 0_f64;
         let mut total_energy = 0;
-        let mut total_duration = 0;
         for channel_info in self.get_energy_meter_info() {
             let index = self.channel_ids[&channel_info.name] as usize;
             let energy = self.reading[index].energy_uW_s - self.prev_reading[index].energy_uW_s;
             let duration = self.reading[index].duration_ms - self.prev_reading[index].duration_ms;
             let power = energy as f64 / (duration as f64 / 1000_f64);
-            let stw_energy = self.reading_stw[index].energy_uW_s;
-            let stw_duration = self.reading_stw[index].duration_ms;
-            let stw_power = stw_energy as f64 / (stw_duration as f64 / 1000_f64);
-            let other_energy = energy - stw_energy;
-            let other_duration = duration - stw_duration;
-            let other_power = other_energy as f64 / (other_duration as f64 / 1000_f64);
+            total_power += power;
             total_energy += energy;
-            total_duration += duration;
-            output_string.push_str(
-                format!(
-                    "{}\t{:.*}\t{}\t{:.*}\t{}\t{:.*}\t",
-                    energy, 2, power, other_energy, 2, other_power, stw_energy, 2, stw_power,
-                )
-                .as_str(),
-            );
+            output_string.push_str(format!("{}\t{:.*}\t", energy, 2, power).as_str());
         }
-        avg_power = total_energy as f64 / (total_duration as f64 / 1000_f64);
-        output_string.push_str(format!("{}\t{:.*}\t", total_energy, 2, avg_power).as_str());
+        output_string.push_str(format!("{}\t{:.*}\t", total_energy, 2, total_power).as_str());
     }
 }
