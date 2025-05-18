@@ -69,6 +69,9 @@ pub struct GlobalState {
     pub(crate) time_large_object_alloc_ns: AtomicU64,
     /// This stores the live bytes and the used bytes (by pages) for each space in last GC. This counter is only updated in the GC release phase.
     pub(crate) live_bytes_in_last_gc: AtomicRefCell<HashMap<&'static str, LiveBytesStats>>,
+    /// Slowpath timings for mutators
+    #[cfg(feature = "measure_slowpath")]
+    pub(crate) slowpath_timings: Mutex<Vec<u64>>,
 }
 
 impl GlobalState {
@@ -268,6 +271,8 @@ impl Default for GlobalState {
             #[cfg(feature = "measure_large_object_alloc")]
             time_large_object_alloc_ns: AtomicU64::new(0),
             live_bytes_in_last_gc: AtomicRefCell::new(HashMap::new()),
+            #[cfg(feature = "measure_slowpath")]
+            slowpath_timings: Mutex::new(vec![]),
         }
     }
 }

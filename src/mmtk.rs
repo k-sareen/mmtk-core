@@ -427,6 +427,13 @@ impl<VM: VMBinding> MMTK<VM> {
     pub fn harness_end(&'static self) {
         self.stats.stop_all(self);
         self.state.inside_harness.store(false, Ordering::SeqCst);
+        #[cfg(feature = "measure_slowpath")]
+        {
+            let timings = self.state.slowpath_timings.lock().unwrap();
+            for t in timings.iter() {
+                println!("mutator slowpath allocation took: {} ns", t);
+            }
+        }
         probe!(mmtk, harness_end);
     }
 

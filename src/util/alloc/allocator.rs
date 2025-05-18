@@ -382,11 +382,30 @@ pub trait Allocator<VM: VMBinding>: Downcast {
     /// * `offset` the required offset in bytes.
     fn alloc_slow_once_traced(&mut self, size: usize, align: usize, offset: usize) -> Address {
         probe!(mmtk, alloc_slow_once_start);
+        #[cfg(feature = "measure_slowpath")]
+        let start = std::time::Instant::now();
         // probe! expands to an empty block on unsupported platforms
         #[allow(clippy::let_and_return)]
         let ret = self.alloc_slow_once(size, align, offset);
+        #[cfg(feature = "measure_slowpath")]
+        let elapsed = start.elapsed();
         probe!(mmtk, alloc_slow_once_end);
         atrace_heap_size(self.get_context().gc_trigger.get_reserved_pages());
+        #[cfg(feature = "measure_slowpath")]
+        if self
+            .get_context()
+            .state
+            .inside_harness
+            .load(Ordering::Relaxed)
+            && VM::VMActivePlan::is_mutator(self.get_tls())
+        {
+            self.get_context()
+                .state
+                .slowpath_timings
+                .lock()
+                .unwrap()
+                .push(elapsed.as_nanos() as u64);
+        }
         ret
     }
 
