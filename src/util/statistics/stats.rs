@@ -158,6 +158,11 @@ impl Stats {
         for counter in &(*counters) {
             counter.lock().unwrap().phase_change(self.get_phase());
         }
+        #[cfg(feature = "perf_counter")]
+        {
+            let mut power_stats = self.power_stats.lock().unwrap();
+            power_stats.start_gc();
+        }
         self.shared.increment_phase();
     }
 
@@ -168,6 +173,11 @@ impl Stats {
         let counters = self.counters.lock().unwrap();
         for counter in &(*counters) {
             counter.lock().unwrap().phase_change(self.get_phase());
+        }
+        #[cfg(feature = "perf_counter")]
+        {
+            let mut power_stats = self.power_stats.lock().unwrap();
+            power_stats.end_gc();
         }
         self.shared.increment_phase();
     }
