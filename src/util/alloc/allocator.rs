@@ -132,7 +132,11 @@ pub fn get_maximum_aligned_size_inner<VM: VMBinding>(
 
 /// ATrace heap size in KB. Expects heap size to be provided in pages.
 fn atrace_heap_size(heap_size: usize) {
-    atrace::atrace_int(atrace::AtraceTag::Dalvik, "Heap size (KB)", (heap_size << 2) as i32);
+    atrace::atrace_int(
+        atrace::AtraceTag::Dalvik,
+        "Heap size (KB)",
+        (heap_size << 2) as i32,
+    );
 }
 
 /// The context an allocator needs to access in order to perform allocation.
