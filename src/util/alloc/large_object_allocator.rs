@@ -42,6 +42,8 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
         let cell: Address = self.alloc_slow(size, align, offset);
         // We may get a null ptr from alloc due to the VM being OOM
         if !cell.is_zero() {
+            #[cfg(feature = "measure_large_object_alloc")]
+            self.get_context().state.num_large_object_alloc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             allocator::align_allocation::<VM>(cell, align, offset)
         } else {
             cell
@@ -49,12 +51,24 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
     }
 
     fn alloc_slow_once(&mut self, size: usize, align: usize, _offset: usize) -> Address {
+        #[cfg(feature = "measure_large_object_alloc")]
+        let start_time = std::time::Instant::now();
         if self.space.will_oom_on_acquire(self.tls, size) {
             return Address::ZERO;
         }
 
         let maxbytes = allocator::get_maximum_aligned_size::<VM>(size, align);
         let pages = crate::util::conversions::bytes_to_pages_up(maxbytes);
+        #[cfg(feature = "measure_large_object_alloc")]
+        {
+            let rtn = self.space.allocate_pages(self.tls, pages);
+            let end_time = std::time::Instant::now();
+            if !rtn.is_zero() {
+                let alloc_time = end_time.duration_since(start_time).as_nanos() as u64;
+                self.get_context().state.time_large_object_alloc_ns.fetch_add(alloc_time, std::sync::atomic::Ordering::SeqCst);
+            }
+            return rtn;
+        }
         self.space.allocate_pages(self.tls, pages)
     }
 }

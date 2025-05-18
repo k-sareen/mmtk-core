@@ -413,6 +413,11 @@ impl<VM: VMBinding> MMTK<VM> {
         self.handle_user_collection_request(tls, true, true);
         self.state.inside_harness.store(true, Ordering::SeqCst);
         self.stats.start_all();
+        #[cfg(feature = "measure_large_object_alloc")]
+        {
+            self.state.num_large_object_alloc.swap(0, Ordering::SeqCst);
+            self.state.time_large_object_alloc_ns.swap(0, Ordering::SeqCst);
+        }
         self.scheduler.enable_stat();
     }
 

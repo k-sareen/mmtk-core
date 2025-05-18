@@ -205,6 +205,15 @@ impl Stats {
             let power_stats = self.power_stats.lock().unwrap();
             power_stats.print_stats(&mut output_string);
         }
+        #[cfg(feature = "measure_large_object_alloc")]
+        output_string.push_str(
+            format!(
+                "{}\t{}\t",
+                mmtk.state.num_large_object_alloc.load(Ordering::Relaxed),
+                (mmtk.state.time_large_object_alloc_ns.load(Ordering::Relaxed) as f64) / 1e6
+            )
+            .as_str(),
+        );
         output_string.push_str(
             "\n------------------------------ End MMTk Statistics -----------------------------\n",
         );
@@ -234,6 +243,8 @@ impl Stats {
             let power_stats = self.power_stats.lock().unwrap();
             power_stats.print_column_names(output_string);
         }
+        #[cfg(feature = "measure_large_object_alloc")]
+        output_string.push_str("LOS.alloc\tLOS.alloc.time\t");
         output_string.push('\n');
     }
 

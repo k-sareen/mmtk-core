@@ -1,6 +1,8 @@
 use atomic_refcell::AtomicRefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+#[cfg(feature = "measure_large_object_alloc")]
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -59,6 +61,12 @@ pub struct GlobalState {
     pub(crate) malloc_bytes: AtomicUsize,
     /// Inside benchmark harness
     pub(crate) inside_harness: AtomicBool,
+    /// Number of large object allocations
+    #[cfg(feature = "measure_large_object_alloc")]
+    pub(crate) num_large_object_alloc: AtomicUsize,
+    /// Time taken for large object allocations
+    #[cfg(feature = "measure_large_object_alloc")]
+    pub(crate) time_large_object_alloc_ns: AtomicU64,
     /// This stores the live bytes and the used bytes (by pages) for each space in last GC. This counter is only updated in the GC release phase.
     pub(crate) live_bytes_in_last_gc: AtomicRefCell<HashMap<&'static str, LiveBytesStats>>,
 }
@@ -255,6 +263,10 @@ impl Default for GlobalState {
             #[cfg(feature = "malloc_counted_size")]
             malloc_bytes: AtomicUsize::new(0),
             inside_harness: AtomicBool::new(false),
+            #[cfg(feature = "measure_large_object_alloc")]
+            num_large_object_alloc: AtomicUsize::new(0),
+            #[cfg(feature = "measure_large_object_alloc")]
+            time_large_object_alloc_ns: AtomicU64::new(0),
             live_bytes_in_last_gc: AtomicRefCell::new(HashMap::new()),
         }
     }
