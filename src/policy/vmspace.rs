@@ -32,6 +32,7 @@ use std::sync::Arc;
 /// as other MMTk objects allocated by MMTk.
 pub struct VMSpace<VM: VMBinding> {
     pub(crate) initialized: bool,
+    pub(crate) object_cache: Vec<ObjectReference>,
     mark_state: MarkState,
     common: CommonSpace<VM>,
     pr: ExternalPageResource<VM>,
@@ -188,6 +189,7 @@ impl<VM: VMBinding> VMSpace<VM> {
         let scheduler = args.scheduler.clone();
         let space = Self {
             initialized: false,
+            object_cache: vec![],
             mark_state: MarkState::new(),
             pr: ExternalPageResource::new(args.vm_map),
             common: CommonSpace::new(args.into_policy_args(

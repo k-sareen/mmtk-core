@@ -496,19 +496,31 @@ where
         &self,
         closure: &mut STObjectGraphTraversalClosure<VM, P, KIND>,
         worker: &mut GCWorker<VM>,
-        _mmtk: &'static MMTK<VM>,
+        mmtk: &'static MMTK<VM>,
     ) {
         let scan_vm_space_event =
             atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "ScanVMSpaceObjects");
         probe!(mmtk, scan_vm_space_objects_start);
         debug_assert!(closure.is_empty());
-        let mut scan_closure = |objects: Vec<ObjectReference>| {
+        let mut scan_closure = |objects: &Vec<ObjectReference>| {
             for object in objects {
-                closure.enqueue(object);
+                closure.enqueue(*object);
             }
             closure.process_slots();
         };
-        <VM as VMBinding>::VMScanning::scan_vm_space_objects(worker.tls, scan_closure);
+        // SAFETY: We are the only GC thread
+        let mut vm_space = &mut unsafe { mmtk.get_plan_mut() }.base_mut().vm_space;
+        if crate::util::rust_util::unlikely(!vm_space.initialized) {
+            // Clear the object cache in case we have to re-initialize the VM space
+            // For example, if we have to add an application image at run-time
+            vm_space.object_cache.clear();
+            let mut push_closure = |objects: Vec<ObjectReference>| {
+                vm_space.object_cache.extend(objects)
+            };
+            <VM as VMBinding>::VMScanning::scan_vm_space_objects(worker.tls, push_closure);
+            vm_space.initialized = true;
+        }
+        scan_closure(&vm_space.object_cache);
         probe!(mmtk, scan_vm_space_objects_end);
     }
 }
