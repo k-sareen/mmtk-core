@@ -81,6 +81,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
     }
 
     fn acquire(&self, tls: VMThread, pages: usize) -> Address {
+        #[cfg(feature = "atrace_alloc_slowpath")]
         let acquire_event = atrace::begin_scoped_event(
             atrace::AtraceTag::Dalvik,
             format!("MMTk {}::acquire", self.get_name()).as_str(),
@@ -108,7 +109,9 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
         trace!("Polling ..");
 
         if should_poll && self.get_gc_trigger().poll(false, Some(self.as_space())) {
-            let collection_event = atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Collection Required");
+            #[cfg(feature = "atrace_alloc_slowpath")]
+            let collection_event =
+                atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Collection Required");
             debug!("Collection required");
             assert!(allow_gc, "GC is not allowed here: collection is not initialized (did you call initialize_collection()?).");
 
@@ -124,7 +127,9 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
             VM::VMCollection::block_for_gc(VMMutatorThread(tls)); // We have checked that this is mutator
             unsafe { Address::zero() }
         } else {
-            let alloc_pages_event = atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Allocating New Pages");
+            #[cfg(feature = "atrace_alloc_slowpath")]
+            let alloc_pages_event =
+                atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Allocating New Pages");
             debug!("Collection not required");
             match pr.get_new_pages(self.as_space(), pages_reserved, pages, tls) {
                 Ok(res) => {
@@ -140,7 +145,9 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     // TODO: Concurrent zeroing
                     #[cfg(not(feature = "eager_zeroing"))]
                     {
-                        let zeroing_event = atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Zeroing Pages");
+                        #[cfg(feature = "atrace_alloc_slowpath")]
+                        let zeroing_event =
+                            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Zeroing Pages");
                         let plan = *(self.get_gc_trigger().options.plan);
                         if self.common().zeroed && plan != PlanSelector::NoGC {
                             memory::zero(res.start, bytes);
@@ -177,6 +184,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                     res.start
                 }
                 Err(_) => {
+                    #[cfg(feature = "atrace_alloc_slowpath")]
                     let failed_alloc_event = atrace::begin_scoped_event(
                         atrace::AtraceTag::Dalvik,
                         "Failed Allocation Somehow",
@@ -226,7 +234,9 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
      * @param new_chunk {@code true} if the new space encroached upon or started a new chunk or chunks.
      */
     fn grow_space(&self, start: Address, bytes: usize, new_chunk: bool) {
-        let grow_space_event = atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Space::grow_space");
+        #[cfg(feature = "atrace_alloc_slowpath")]
+        let grow_space_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Space::grow_space");
         trace!(
             "Grow space from {} for {} bytes (new chunk = {})",
             start,

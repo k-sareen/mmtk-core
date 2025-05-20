@@ -85,6 +85,7 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
         required_pages: usize,
         tls: VMThread,
     ) -> Result<PRAllocResult, PRAllocFail> {
+        #[cfg(feature = "atrace_alloc_slowpath")]
         let alloc_event = atrace::begin_scoped_event(
             atrace::AtraceTag::Dalvik,
             "FreeListPageResource::alloc_pages",
@@ -152,6 +153,7 @@ impl<VM: VMBinding> PageResource<VM> for FreeListPageResource<VM> {
                 use crate::util::memory;
                 use crate::util::memory::MmapAnnotation;
 
+                #[cfg(feature = "atrace_alloc_slowpath")]
                 let mmap_event = atrace::begin_scoped_event(
                     atrace::AtraceTag::Dalvik,
                     "mmap Pages and Metadata",

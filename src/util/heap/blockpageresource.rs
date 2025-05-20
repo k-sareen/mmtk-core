@@ -50,6 +50,11 @@ impl<VM: VMBinding, B: Region> PageResource<VM> for BlockPageResource<VM, B> {
         required_pages: usize,
         tls: VMThread,
     ) -> Result<PRAllocResult, PRAllocFail> {
+        #[cfg(feature = "atrace_alloc_slowpath")]
+        let alloc_event = atrace::begin_scoped_event(
+            atrace::AtraceTag::Dalvik,
+            "BlockPageResource::alloc_pages",
+        );
         self.alloc_pages_fast(space, reserved_pages, required_pages, tls)
     }
 
@@ -146,6 +151,7 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
             use crate::util::memory;
             use crate::util::memory::MmapAnnotation;
 
+            #[cfg(feature = "atrace_alloc_slowpath")]
             let mmap_event = atrace::begin_scoped_event(
                 atrace::AtraceTag::Dalvik,
                 "mmap Pages and Metadata",
