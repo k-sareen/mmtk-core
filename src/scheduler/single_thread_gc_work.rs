@@ -95,6 +95,8 @@ where
     P: Plan<VM = VM> + PlanTraceObject<VM> + Send,
 {
     fn do_work(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
+        let gc_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, format!("{:?} GC", *mmtk.options.plan).as_str());
         let mut closure = STObjectGraphTraversalClosure::<VM, P, KIND>::new(mmtk, worker);
         STStopMutators::<VM, P>::new().execute(worker, mmtk);
         STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
@@ -129,6 +131,8 @@ where
     }
 
     pub fn execute(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
+        let prepare_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Prepare");
         probe!(mmtk, prepare_start);
         // SAFETY: We're a single threaded GC, so no other thread can access the plan
         let plan_mut: &mut P = unsafe { &mut *(self.plan as *const _ as *mut _) };
@@ -171,6 +175,8 @@ where
     }
 
     pub fn execute(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
+        let release_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Release");
         probe!(mmtk, release_start);
         mmtk.gc_trigger.policy.on_gc_release(mmtk);
         // SAFETY: We're a single threaded GC, so no other thread can access the plan
@@ -212,6 +218,8 @@ where
         worker: &mut GCWorker<VM>,
         mmtk: &'static MMTK<VM>,
     ) {
+        let stop_mutators_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "StopMutatorsAndProcessThreadRoots");
         probe!(mmtk, stop_mutators_and_process_thread_roots_start);
         mmtk.state.prepare_for_stack_scanning();
         <VM as VMBinding>::VMCollection::stop_all_mutators(worker.tls, |mutator| {
@@ -385,6 +393,8 @@ where
         worker: &mut GCWorker<VM>,
         mmtk: &'static MMTK<VM>
     ) {
+        let flush_mutator_buffers_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "FlushMutatorBuffers");
         probe!(mmtk, flush_mutator_buffers_start);
         let num_mutators = <VM as VMBinding>::VMActivePlan::number_of_mutators();
         self.mutator.flush();
@@ -420,6 +430,8 @@ where
         worker: &mut GCWorker<VM>,
         _mmtk: &'static MMTK<VM>,
     ) {
+        let scan_process_mutator_roots_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "ScanAndProcessMutatorRoots");
         probe!(mmtk, scan_and_process_mutator_roots_start);
         <VM as VMBinding>::VMActivePlan::mutators().for_each(|mutator| {
             <VM as VMBinding>::VMScanning::single_threaded_scan_roots_in_mutator_thread(
@@ -455,6 +467,8 @@ where
         worker: &mut GCWorker<VM>,
         _mmtk: &'static MMTK<VM>,
     ) {
+        let scan_process_vm_roots_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "ScanAndProcessVMRoots");
         probe!(mmtk, scan_and_process_vm_roots_start);
         <VM as VMBinding>::VMScanning::single_threaded_scan_vm_specific_roots(worker.tls, closure);
         probe!(mmtk, scan_and_process_vm_roots_end);
@@ -484,6 +498,8 @@ where
         worker: &mut GCWorker<VM>,
         _mmtk: &'static MMTK<VM>,
     ) {
+        let scan_vm_space_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "ScanVMSpaceObjects");
         probe!(mmtk, scan_vm_space_objects_start);
         debug_assert!(closure.is_empty());
         let mut scan_closure = |objects: Vec<ObjectReference>| {
@@ -567,6 +583,8 @@ where
         worker: &mut GCWorker<VM>,
         _mmtk: &'static MMTK<VM>,
     ) {
+        let process_weak_refs_event =
+            atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "ProcessWeakReferences");
         probe!(mmtk, process_weak_references_start);
         debug_assert!(_closure.is_empty());
         let mut need_to_repeat = true;
