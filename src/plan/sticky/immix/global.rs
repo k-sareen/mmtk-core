@@ -210,7 +210,7 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
     }
 
     fn get_collection_reserved_pages(&self) -> usize {
-        self.immix.get_collection_reserved_pages()
+        self.immix.get_collection_reserved_pages() + self.common().get_collection_reserved_pages()
     }
 
     fn get_used_pages(&self) -> usize {

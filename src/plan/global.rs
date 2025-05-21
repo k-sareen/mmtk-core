@@ -629,6 +629,14 @@ impl<VM: VMBinding> CommonPlan<VM> {
             + zygote_pages
     }
 
+    pub fn get_collection_reserved_pages(&self) -> usize {
+        if unlikely(self.is_zygote()) {
+            self.get_zygote().get_immix_space().defrag_headroom_pages()
+        } else {
+            0
+        }
+    }
+
     pub fn is_zygote_process(&self) -> bool {
         self.base.global_state.is_zygote_process()
     }

@@ -151,7 +151,7 @@ impl<VM: VMBinding> Plan for Immix<VM> {
     }
 
     fn get_collection_reserved_pages(&self) -> usize {
-        self.immix_space.defrag_headroom_pages()
+        self.immix_space.defrag_headroom_pages() + self.common.get_collection_reserved_pages()
     }
 
     fn get_used_pages(&self) -> usize {

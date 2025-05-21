@@ -161,7 +161,7 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
     }
 
     fn get_collection_reserved_pages(&self) -> usize {
-        self.tospace().reserved_pages()
+        self.tospace().reserved_pages() + self.common.get_collection_reserved_pages()
     }
 
     fn get_used_pages(&self) -> usize {
