@@ -258,6 +258,7 @@ impl<VM: VMBinding> ImmixAllocator<VM> {
                     end_line,
                     self.tls
                 );
+                #[cfg(not(feature = "eager_zeroing"))]
                 crate::util::memory::zero(
                     self.bump_pointer.cursor,
                     self.bump_pointer.limit - self.bump_pointer.cursor,
