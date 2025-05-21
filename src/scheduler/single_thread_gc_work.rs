@@ -278,7 +278,8 @@ where
             "Object {:?} is not sane!",
             object,
         );
-        // self.plan.base().global_state.trace_object_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "trace_scan_object_count")]
+        self.plan.base().global_state.trace_object_count.fetch_add(1, Ordering::Relaxed);
         self.plan.trace_object::<_, KIND>(self, object, self.worker())
     }
 
@@ -323,7 +324,8 @@ where
             self.worker().mark_stack.push(slot);
         };
         <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
-        // self.plan.base().global_state.scan_object_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "trace_scan_object_count")]
+        self.plan.base().global_state.scan_object_count.fetch_add(1, Ordering::Relaxed);
         self.plan.post_scan_object(object);
     }
 }

@@ -612,18 +612,21 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
 
         // Reset the triggering information.
         mmtk.state.reset_collection_trigger();
-        // let scan_count = mmtk
-        //     .state
-        //     .scan_object_count
-        //     .swap(0, std::sync::atomic::Ordering::Relaxed);
-        // let trace_count = mmtk
-        //     .state
-        //     .trace_object_count
-        //     .swap(0, std::sync::atomic::Ordering::Relaxed);
-        // println!(
-        //     "scanned {} objects; traced {} objects",
-        //     scan_count, trace_count
-        // );
+        #[cfg(feature = "trace_scan_object_count")]
+        {
+            let scan_count = mmtk
+                .state
+                .scan_object_count
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            let trace_count = mmtk
+                .state
+                .trace_object_count
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            println!(
+                "scanned {} objects; traced {} objects",
+                scan_count, trace_count
+            );
+        }
 
         // Set to NotInGC after everything, and right before resuming mutators.
         mmtk.set_gc_status(GcStatus::NotInGC);

@@ -869,7 +869,8 @@ pub trait ScanObjectsWork<VM: VMBinding>: GCWork<VM> + Sized {
                     use std::sync::atomic::Ordering;
                     // If an object supports slot-enqueuing, we enqueue its slots.
                     <VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
-                    // mmtk.state.scan_object_count.fetch_add(1, Ordering::Relaxed);
+                    #[cfg(feature = "trace_scan_object_count")]
+                    mmtk.state.scan_object_count.fetch_add(1, Ordering::Relaxed);
                     self.post_scan_object(object);
                 } else {
                     // If an object does not support slot-enqueuing, we have to use
@@ -1029,13 +1030,16 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
         }
         let new_object = self.trace_object(object);
 
+        #[cfg(feature = "trace_scan_object_count")]
+        {
+            use std::sync::atomic::Ordering;
+            self.base
+                .mmtk()
+                .state
+                .trace_object_count
+                .fetch_add(1, Ordering::Relaxed);
+        }
         // use crate::policy::space::Space;
-        // use std::sync::atomic::Ordering;
-        // self.base
-        //     .mmtk()
-        //     .state
-        //     .trace_object_count
-        //     .fetch_add(1, Ordering::Relaxed);
         // let vm_space = &self.base.mmtk().get_plan().base().vm_space;
         // if unlikely(!vm_space.initialized) && vm_space.address_in_space(slot.as_address()) {
         //     {
