@@ -31,7 +31,15 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
 
     fn is_live(&self, object: ObjectReference) -> bool {
         if !self.is_from_space() {
-            object.to_raw_address() < self.pr.cursor()
+            // XXX(kunals): For discontiguous spaces, we can't check just
+            // against the cursor since the cursor could potentially be behind
+            // the actual live object if a new chunk has been allocated behind
+            // old chunks. Hence, only check against the cursor for fixed size
+            // contiguous spaces.
+            #[cfg(feature = "semispace_fixed_size")]
+            return object.to_raw_address() < self.pr.cursor();
+            #[cfg(not(feature = "semispace_fixed_size"))]
+            true
         } else {
             object_forwarding::is_forwarded::<VM>(object)
         }
