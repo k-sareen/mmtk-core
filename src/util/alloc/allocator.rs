@@ -139,6 +139,16 @@ fn atrace_heap_size(heap_size: usize) {
     );
 }
 
+#[cfg(feature = "atrace_heap_size_breakdown")]
+/// ATrace space size in KB. Expects space size to be provided in pages.
+fn atrace_space_size(space_name: &str, space_size: usize) {
+    atrace::atrace_int(
+        atrace::AtraceTag::Dalvik,
+        format!("{} size (KB)", space_name).as_str(),
+        (space_size << 2) as i32,
+    );
+}
+
 /// The context an allocator needs to access in order to perform allocation.
 pub struct AllocatorContext<VM: VMBinding> {
     pub state: Arc<GlobalState>,
@@ -395,6 +405,21 @@ pub trait Allocator<VM: VMBinding>: Downcast {
         let elapsed = start.elapsed();
         probe!(mmtk, alloc_slow_once_end);
         atrace_heap_size(self.get_context().gc_trigger.get_reserved_pages());
+        #[cfg(feature = "atrace_heap_size_breakdown")]
+        {
+            let plan = self.get_context().gc_trigger.plan();
+            plan.for_each_space(&mut |space| {
+                use crate::policy::sft::SFT;
+                use crate::policy::zygotespace::ZygoteSpace;
+                if let Some(opt_zygote) = space.downcast_ref::<Option<ZygoteSpace<VM>>>() {
+                    if let Some(zygote) = opt_zygote {
+                        atrace_space_size(zygote.name(), zygote.reserved_pages());
+                    }
+                } else {
+                    atrace_space_size(space.name(), space.reserved_pages());
+                }
+            });
+        }
         #[cfg(feature = "measure_slowpath")]
         if self
             .get_context()

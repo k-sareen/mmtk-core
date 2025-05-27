@@ -68,7 +68,7 @@ impl<VM: VMBinding> GCTrigger<VM> {
         self.plan.write(plan);
     }
 
-    fn plan(&self) -> &dyn Plan<VM = VM> {
+    pub fn plan(&self) -> &dyn Plan<VM = VM> {
         unsafe { self.plan.assume_init() }
     }
 
