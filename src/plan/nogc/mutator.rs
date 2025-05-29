@@ -1,5 +1,8 @@
 use crate::plan::mutator_context::unreachable_prepare_func;
+#[cfg(not(feature = "nogc_trace"))]
 use crate::plan::mutator_context::unreachable_release_func;
+#[cfg(feature = "nogc_trace")]
+use crate::plan::mutator_context::no_op_release_func;
 use crate::plan::mutator_context::Mutator;
 use crate::plan::mutator_context::MutatorBuilder;
 use crate::plan::mutator_context::MutatorConfig;
@@ -53,7 +56,10 @@ pub fn create_nogc_mutator<VM: VMBinding>(
             vec
         }),
         prepare_func: &unreachable_prepare_func,
+        #[cfg(not(feature = "nogc_trace"))]
         release_func: &unreachable_release_func,
+        #[cfg(feature = "nogc_trace")]
+        release_func: &no_op_release_func,
     };
 
     let builder = MutatorBuilder::new(mutator_tls, mmtk, config);

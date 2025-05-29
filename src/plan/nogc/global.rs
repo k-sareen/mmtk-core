@@ -18,13 +18,29 @@ use crate::util::opaque_pointer::*;
 use crate::vm::VMBinding;
 use enum_map::EnumMap;
 use mmtk_macros::HasSpaces;
+#[cfg(feature = "nogc_trace")]
+use mmtk_macros::PlanTraceObject;
 
 #[cfg(not(feature = "nogc_lock_free"))]
 use crate::policy::immortalspace::ImmortalSpace as NoGCImmortalSpace;
 #[cfg(feature = "nogc_lock_free")]
 use crate::policy::lockfreeimmortalspace::LockFreeImmortalSpace as NoGCImmortalSpace;
 
+#[cfg(not(feature = "nogc_trace"))]
 #[derive(HasSpaces)]
+pub struct NoGC<VM: VMBinding> {
+    #[parent]
+    pub base: BasePlan<VM>,
+    #[space]
+    pub nogc_space: NoGCImmortalSpace<VM>,
+    #[space]
+    pub immortal: ImmortalSpace<VM>,
+    #[space]
+    pub los: ImmortalSpace<VM>,
+}
+
+#[cfg(feature = "nogc_trace")]
+#[derive(HasSpaces, PlanTraceObject)]
 pub struct NoGC<VM: VMBinding> {
     #[parent]
     pub base: BasePlan<VM>,
@@ -39,6 +55,7 @@ pub struct NoGC<VM: VMBinding> {
 /// The plan constraints for the no gc plan.
 pub const NOGC_CONSTRAINTS: PlanConstraints = PlanConstraints {
     collects_garbage: false,
+    needs_prepare_mutator: false,
     ..PlanConstraints::default()
 };
 
@@ -60,19 +77,45 @@ impl<VM: VMBinding> Plan for NoGC<VM> {
     }
 
     fn prepare(&mut self, _worker: &mut GCWorker<VM>) {
-        unreachable!()
+        cfg_if::cfg_if! {
+            if #[cfg(not(feature = "nogc_trace"))] {
+                unreachable!()
+            } else {
+                self.base.prepare(_worker.tls, /* full_heap= */ true);
+                self.nogc_space.prepare();
+                self.immortal.prepare();
+                self.los.prepare();
+            }
+        }
     }
 
     fn release(&mut self, _worker: &mut GCWorker<VM>) {
-        unreachable!()
+        cfg_if::cfg_if! {
+            if #[cfg(not(feature = "nogc_trace"))] {
+                unreachable!()
+            } else {
+                self.base.release(_worker.tls, /* full_heap= */ true);
+                self.nogc_space.release();
+                self.immortal.release();
+                self.los.release();
+            }
+        }
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
         &ALLOCATOR_MAPPING
     }
 
-    fn schedule_collection(&'static self, _scheduler: &GCWorkScheduler<VM>) {
-        unreachable!("GC triggered in nogc")
+    fn schedule_collection(&'static self, scheduler: &GCWorkScheduler<VM>) {
+        cfg_if::cfg_if! {
+            if #[cfg(not(feature = "nogc_trace"))] {
+                unreachable!("GC triggered in nogc")
+            } else {
+                use super::gc_work::NoGCWorkContext;
+                use crate::policy::gc_work::DEFAULT_TRACE;
+                scheduler.schedule_common_work::<NoGCWorkContext<VM, DEFAULT_TRACE>, DEFAULT_TRACE>(self);
+            }
+        }
     }
 
     fn current_gc_may_move_object(&self) -> bool {
