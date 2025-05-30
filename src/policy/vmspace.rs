@@ -1,6 +1,5 @@
 use crate::mmtk::SFT_MAP;
 use crate::plan::{ObjectQueue, VectorObjectQueue};
-use crate::policy::gc_work::DEFAULT_TRACE;
 use crate::policy::sft::GCWorkerMutRef;
 use crate::policy::sft::SFT;
 use crate::policy::space::{CommonSpace, Space};

@@ -35,3 +35,6 @@ pub use gc_work::ProcessEdgesWork;
 
 #[cfg(feature = "single_worker")]
 mod single_thread_gc_work;
+
+#[cfg(feature = "single_worker")]
+pub use single_thread_gc_work::STDoNurseryCollection;

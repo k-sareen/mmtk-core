@@ -45,8 +45,14 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>>
     fn flush_modbuf(&mut self) {
         let buf = self.modbuf.take();
         if !buf.is_empty() {
-            self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure]
-                .add(ProcessModBuf::<GenNurseryProcessEdges<VM, P, DEFAULT_TRACE>>::new(buf));
+            cfg_if::cfg_if! {
+                if #[cfg(not(feature = "single_worker"))] {
+                    self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure]
+                        .add(ProcessModBuf::<GenNurseryProcessEdges<VM, P, DEFAULT_TRACE>>::new(buf));
+                } else {
+                    self.plan.push_modbuf(buf);
+                }
+            }
         }
     }
 
@@ -54,9 +60,15 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>>
         let buf = self.region_modbuf.take();
         if !buf.is_empty() {
             debug_assert!(!buf.is_empty());
-            self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure].add(ProcessRegionModBuf::<
-                GenNurseryProcessEdges<VM, P, DEFAULT_TRACE>,
-            >::new(buf));
+            cfg_if::cfg_if! {
+                if #[cfg(not(feature = "single_worker"))] {
+                    self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure].add(ProcessRegionModBuf::<
+                        GenNurseryProcessEdges<VM, P, DEFAULT_TRACE>,
+                    >::new(buf));
+                } else {
+                    self.plan.push_region_modbuf(buf);
+                }
+            }
         }
     }
 }

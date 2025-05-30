@@ -21,11 +21,15 @@ use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::util::rust_util::{likely, unlikely};
 use crate::util::statistics::counter::EventCounter;
+#[cfg(feature = "single_worker")]
+use crate::util::ObjectReference;
 use crate::vm::ObjectModel;
 use crate::vm::VMBinding;
 use crate::Plan;
 
 use atomic::Ordering;
+#[cfg(feature = "single_worker")]
+use crossbeam_queue::SegQueue;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
@@ -41,6 +45,10 @@ pub struct StickyImmix<VM: VMBinding> {
     gc_full_heap: AtomicBool,
     next_gc_full_heap: AtomicBool,
     full_heap_gc_count: Arc<Mutex<EventCounter>>,
+    #[cfg(feature = "single_worker")]
+    modbufs: SegQueue<Vec<ObjectReference>>,
+    #[cfg(feature = "single_worker")]
+    region_modbufs: SegQueue<Vec<VM::VMMemorySlice>>,
 }
 
 /// The plan constraints for the sticky immix plan.
@@ -124,7 +132,16 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         if !is_full_heap {
             info!("Nursery GC");
             // nursery GC -- we schedule it
-            scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>, DEFAULT_TRACE>(self);
+            cfg_if::cfg_if! {
+                if #[cfg(not(feature = "single_worker"))] {
+                    scheduler.schedule_common_work::<StickyImmixNurseryGCWorkContext<VM, DEFAULT_TRACE>, DEFAULT_TRACE>(self);
+                } else {
+                    use crate::scheduler::STDoNurseryCollection;
+                    use crate::scheduler::WorkBucketStage;
+                    scheduler.work_buckets[WorkBucketStage::Unconstrained]
+                        .add(STDoNurseryCollection::<VM, StickyImmix<VM>, DEFAULT_TRACE>::new());
+                }
+            }
         } else {
             info!("Full heap GC");
             use crate::plan::immix::Immix;
@@ -169,8 +186,23 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         if self.is_current_gc_nursery() {
             self.immix.immix_space.release(worker, false);
             self.immix.common.los.release(false);
+            #[cfg(feature = "single_worker")]
+            {
+                debug_assert!(
+                    self.modbufs.is_empty(),
+                    "Modbufs should be empty for nursery GC"
+                );
+                debug_assert!(
+                    self.region_modbufs.is_empty(),
+                    "Region modbufs should be empty for nursery GC"
+                );
+            }
         } else {
             self.immix.release(worker);
+            // Clear modbufs and region modbufs.
+            // This is required to avoid memory leaks.
+            #[cfg(feature = "single_worker")]
+            self.clear_modbufs();
         }
     }
 
@@ -354,6 +386,30 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
 
         object
     }
+
+    #[cfg(feature = "single_worker")]
+    fn push_modbuf(&self, modbuf: Vec<ObjectReference>) {
+        self.push_modbuf(modbuf);
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn push_region_modbuf(&self, modbuf: Vec<<VM as VMBinding>::VMMemorySlice>) {
+        self.push_region_modbuf(modbuf);
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn process_modbufs<Q: crate::ObjectQueue>(&self, queue: &mut Q) {
+        self.process_modbufs::<Q>(queue)
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn process_region_modbufs<Q: crate::ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        worker: &mut GCWorker<VM>,
+    ) {
+        self.process_region_modbufs::<Q, KIND>(queue, worker)
+    }
 }
 
 impl<VM: VMBinding> StickyImmix<VM> {
@@ -384,6 +440,10 @@ impl<VM: VMBinding> StickyImmix<VM> {
             gc_full_heap: AtomicBool::new(false),
             next_gc_full_heap: AtomicBool::new(false),
             full_heap_gc_count,
+            #[cfg(feature = "single_worker")]
+            modbufs: SegQueue::new(),
+            #[cfg(feature = "single_worker")]
+            region_modbufs: SegQueue::new(),
         }
     }
 
@@ -427,5 +487,100 @@ impl<VM: VMBinding> StickyImmix<VM> {
 
     pub fn get_immix_space(&self) -> &ImmixSpace<VM> {
         &self.immix.immix_space
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn clear_modbufs(&mut self) {
+        debug_assert!(
+            !self.is_current_gc_nursery(),
+            "Modbufs should only be cleared for full heap GC"
+        );
+        if !self.modbufs.is_empty() {
+            // Clear modbufs.
+            while let Some(_) = self.modbufs.pop() {}
+        }
+        if !self.region_modbufs.is_empty() {
+            // Clear modbufs.
+            while let Some(_) = self.region_modbufs.pop() {}
+        }
+        debug_assert!(
+            self.modbufs.is_empty(),
+            "Modbufs should be empty after clearing"
+        );
+        debug_assert!(
+            self.region_modbufs.is_empty(),
+            "Region modbufs should be empty after clearing"
+        );
+    }
+
+    /// Push a modbuf to the plan. This is used by mutators to flush their modbufs.
+    #[cfg(feature = "single_worker")]
+    pub fn push_modbuf(&self, modbuf: Vec<ObjectReference>) {
+        self.modbufs.push(modbuf);
+    }
+
+    /// Push a region modbuf to the plan. This is used by mutators to flush their modbufs.
+    #[cfg(feature = "single_worker")]
+    pub fn push_region_modbuf(&self, modbuf: Vec<VM::VMMemorySlice>) {
+        self.region_modbufs.push(modbuf);
+    }
+
+    #[cfg(feature = "single_worker")]
+    pub fn process_modbufs<Q: crate::ObjectQueue>(&self, queue: &mut Q) {
+        if self.is_current_gc_nursery() {
+            if !self.modbufs.is_empty() {
+                while let Some(modbuf) = self.modbufs.pop() {
+                    for obj in modbuf {
+                        debug_assert!(
+                            !self.is_object_in_nursery(obj),
+                            "{} was logged but is not mature. Dumping process memory maps:\n{}",
+                            obj,
+                            crate::util::memory::get_process_memory_maps(),
+                        );
+                        <VM as VMBinding>::VMObjectModel::GLOBAL_LOG_BIT_SPEC.store_atomic::<VM, u8>(
+                            obj,
+                            1,
+                            None,
+                            Ordering::SeqCst,
+                        );
+                        queue.enqueue(obj);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "single_worker")]
+    pub fn process_region_modbufs<Q: crate::ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        worker: &mut GCWorker<VM>,
+    ) {
+        use crate::plan::generational::global::GenerationalPlanExt;
+        use crate::vm::slot::{MemorySlice, Slot};
+
+        if self.is_current_gc_nursery() {
+            if !self.region_modbufs.is_empty() {
+                while let Some(modbuf) = self.region_modbufs.pop() {
+                    for slice in modbuf {
+                        for slot in slice.iter_slots() {
+                            let Some(obj) = slot.load() else { continue };
+                            // Re-order cascading if to put VM space check first
+                            if self.base().vm_space.in_space(obj) {
+                                continue;
+                            }
+                            let new_object = self.trace_object_nursery::<Q, KIND>(
+                                queue,
+                                obj,
+                                worker,
+                            );
+                            if new_object != obj {
+                                slot.store(new_object);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

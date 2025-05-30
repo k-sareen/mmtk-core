@@ -113,7 +113,16 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
 
         if !is_full_heap {
             info!("Nursery GC");
-            scheduler.schedule_common_work::<GenImmixNurseryGCWorkContext<VM>, DEFAULT_TRACE>(self);
+            cfg_if::cfg_if! {
+                if #[cfg(not(feature = "single_worker"))] {
+                    scheduler.schedule_common_work::<GenImmixNurseryGCWorkContext<VM>, DEFAULT_TRACE>(self);
+                } else {
+                    use crate::scheduler::STDoNurseryCollection;
+                    use crate::scheduler::WorkBucketStage;
+                    scheduler.work_buckets[WorkBucketStage::Unconstrained]
+                        .add(STDoNurseryCollection::<VM, GenImmix<VM>, DEFAULT_TRACE>::new());
+                }
+            }
         } else {
             info!("Full heap GC");
             let immix_space = if unlikely(self.common().is_zygote()) {
@@ -249,6 +258,30 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
     ) -> ObjectReference {
         self.gen
             .trace_object_nursery::<Q, KIND>(queue, object, worker)
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn push_modbuf(&self, modbuf: Vec<ObjectReference>) {
+        self.gen.push_modbuf(modbuf);
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn push_region_modbuf(&self, modbuf: Vec<<VM as VMBinding>::VMMemorySlice>) {
+        self.gen.push_region_modbuf(modbuf);
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn process_modbufs<Q: ObjectQueue>(&self, queue: &mut Q) {
+        self.gen.process_modbufs::<Q>(queue)
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn process_region_modbufs<Q: ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        worker: &mut GCWorker<VM>,
+    ) {
+        self.gen.process_region_modbufs::<Q, KIND>(queue, worker)
     }
 }
 

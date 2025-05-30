@@ -2,6 +2,8 @@ use crate::plan::global::CommonPlan;
 use crate::plan::global::CreateSpecificPlanArgs;
 use crate::plan::ObjectQueue;
 use crate::plan::Plan;
+#[cfg(feature = "single_worker")]
+use crate::plan::PlanTraceObject;
 use crate::policy::copyspace::CopySpace;
 use crate::policy::gc_work::{TraceKind, TRACE_KIND_TRANSITIVE_PIN};
 use crate::policy::space::Space;
@@ -14,6 +16,8 @@ use crate::util::Address;
 use crate::util::ObjectReference;
 use crate::util::VMWorkerThread;
 use crate::vm::{ObjectModel, VMBinding};
+#[cfg(feature = "single_worker")]
+use crossbeam_queue::SegQueue;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -36,6 +40,10 @@ pub struct CommonGenPlan<VM: VMBinding> {
     /// Is next GC full heap?
     pub next_gc_full_heap: AtomicBool,
     pub full_heap_gc_count: Arc<Mutex<EventCounter>>,
+    #[cfg(feature = "single_worker")]
+    modbufs: SegQueue<Vec<ObjectReference>>,
+    #[cfg(feature = "single_worker")]
+    region_modbufs: SegQueue<Vec<VM::VMMemorySlice>>,
 }
 
 impl<VM: VMBinding> CommonGenPlan<VM> {
@@ -56,6 +64,10 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
             gc_full_heap: AtomicBool::default(),
             next_gc_full_heap: AtomicBool::new(false),
             full_heap_gc_count,
+            #[cfg(feature = "single_worker")]
+            modbufs: SegQueue::new(),
+            #[cfg(feature = "single_worker")]
+            region_modbufs: SegQueue::new(),
         }
     }
 
@@ -88,6 +100,47 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
         let full_heap = !self.is_current_gc_nursery();
         self.common.release(worker, full_heap);
         self.nursery.release();
+        #[cfg(feature = "single_worker")]
+        if full_heap {
+            // Clear modbufs and region modbufs.
+            // This is required to avoid memory leaks.
+            self.clear_modbufs();
+        } else {
+            debug_assert!(
+                self.modbufs.is_empty(),
+                "Modbufs should be empty for nursery GC"
+            );
+            debug_assert!(
+                self.region_modbufs.is_empty(),
+                "Region modbufs should be empty for nursery GC: {} {:?}",
+                self.region_modbufs.len(),
+                self.region_modbufs.pop(),
+            );
+        }
+    }
+
+    #[cfg(feature = "single_worker")]
+    fn clear_modbufs(&mut self) {
+        debug_assert!(
+            !self.is_current_gc_nursery(),
+            "Modbufs should only be cleared for full heap GC"
+        );
+        if !self.modbufs.is_empty() {
+            // Clear modbufs.
+            while let Some(_) = self.modbufs.pop() {}
+        }
+        if !self.region_modbufs.is_empty() {
+            // Clear modbufs.
+            while let Some(_) = self.region_modbufs.pop() {}
+        }
+        debug_assert!(
+            self.modbufs.is_empty(),
+            "Modbufs should be empty after clearing"
+        );
+        debug_assert!(
+            self.region_modbufs.is_empty(),
+            "Region modbufs should be empty after clearing"
+        );
     }
 
     /// Independent of how many pages remain in the page budget (a function of heap size), we must
@@ -246,6 +299,77 @@ impl<VM: VMBinding> CommonGenPlan<VM> {
         object
     }
 
+    /// Push a modbuf to the plan. This is used by mutators to flush their modbufs.
+    #[cfg(feature = "single_worker")]
+    pub fn push_modbuf(&self, modbuf: Vec<ObjectReference>) {
+        self.modbufs.push(modbuf);
+    }
+
+    /// Push a region modbuf to the plan. This is used by mutators to flush their modbufs.
+    #[cfg(feature = "single_worker")]
+    pub fn push_region_modbuf(&self, modbuf: Vec<VM::VMMemorySlice>) {
+        self.region_modbufs.push(modbuf);
+    }
+
+    /// Process modbufs flushed by mutators.
+    #[cfg(feature = "single_worker")]
+    pub fn process_modbufs<Q: ObjectQueue>(&self, queue: &mut Q) {
+        if self.is_current_gc_nursery() {
+            if !self.modbufs.is_empty() {
+                while let Some(modbuf) = self.modbufs.pop() {
+                    for obj in modbuf {
+                        debug_assert!(
+                            !self.nursery.in_space(obj),
+                            "{} was logged but is not mature. Dumping process memory maps:\n{}",
+                            obj,
+                            crate::util::memory::get_process_memory_maps(),
+                        );
+                        <VM as VMBinding>::VMObjectModel::GLOBAL_LOG_BIT_SPEC.store_atomic::<VM, u8>(
+                            obj,
+                            1,
+                            None,
+                            Ordering::SeqCst,
+                        );
+                        queue.enqueue(obj);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "single_worker")]
+    pub fn process_region_modbufs<Q: ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        worker: &mut GCWorker<VM>,
+    ) {
+        use crate::vm::slot::{MemorySlice, Slot};
+
+        if self.is_current_gc_nursery() {
+            if !self.region_modbufs.is_empty() {
+                while let Some(modbuf) = self.region_modbufs.pop() {
+                    for slice in modbuf {
+                        for slot in slice.iter_slots() {
+                            let Some(obj) = slot.load() else { continue };
+                            // Re-order cascading if to put VM space check first
+                            if self.common.base.vm_space.in_space(obj) {
+                                continue;
+                            }
+                            let new_object = self.trace_object_nursery::<Q, KIND>(
+                                queue,
+                                obj,
+                                worker,
+                            );
+                            if new_object != obj {
+                                slot.store(new_object);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Is the current GC a nursery GC?
     pub fn is_current_gc_nursery(&self) -> bool {
         !self.gc_full_heap.load(Ordering::SeqCst)
@@ -331,6 +455,26 @@ pub trait GenerationalPlanExt<VM: VMBinding>: GenerationalPlan<VM = VM> {
         object: ObjectReference,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference;
+
+    /// Push a modbuf to the plan. This is used by mutators to flush their modbufs.
+    #[cfg(feature = "single_worker")]
+    fn push_modbuf(&self, modbuf: Vec<ObjectReference>);
+
+    /// Push a region modbuf to the plan. This is used by mutators to flush their modbufs.
+    #[cfg(feature = "single_worker")]
+    fn push_region_modbuf(&self, modbuf: Vec<VM::VMMemorySlice>);
+
+    /// Process modbufs flushed by mutators.
+    #[cfg(feature = "single_worker")]
+    fn process_modbufs<Q: ObjectQueue>(&self, queue: &mut Q);
+
+    /// Process region modbufs flushed by mutators.
+    #[cfg(feature = "single_worker")]
+    fn process_region_modbufs<Q: ObjectQueue, const KIND: TraceKind>(
+        &self,
+        queue: &mut Q,
+        worker: &mut GCWorker<VM>,
+    );
 }
 
 /// Is current GC only collecting objects allocated since last GC? This method can be called

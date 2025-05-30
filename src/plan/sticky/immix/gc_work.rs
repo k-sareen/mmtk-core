@@ -1,5 +1,4 @@
 use crate::policy::gc_work::TraceKind;
-use crate::policy::gc_work::DEFAULT_TRACE;
 use crate::policy::gc_work::TRACE_KIND_TRANSITIVE_PIN;
 use crate::scheduler::gc_work::PlanProcessEdges;
 use crate::{plan::generational::gc_work::GenNurseryProcessEdges, vm::VMBinding};
