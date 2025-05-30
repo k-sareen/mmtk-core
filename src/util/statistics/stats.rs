@@ -217,7 +217,12 @@ impl Stats {
         output_string.push_str(
             "\n------------------------------ End MMTk Statistics -----------------------------\n",
         );
-        print!("{}", output_string);
+        // Print to logcat or stdout depending on if we are an application or headless process
+        if *mmtk.options.is_zygote_process {
+            warn!("{}", output_string);
+        } else {
+            print!("{}", output_string);
+        }
     }
 
     pub fn print_column_names(
