@@ -27,14 +27,27 @@ rust_library {
     features: [
         "default",
         "vm_space",
+        "nogc_trace",
         "perf_counter",
+        // "eager_zeroing",
+        "single_worker",                    // Single-threaded build
         "eager_sweeping",
+        // "edge_enqueuing",                // Multi-threaded build
         "object_pinning",
-        "builtin_env_logger",    // This is technically only used by the x86_64 headless build
+        // "semispace_fixed_size",
+        "builtin_env_logger",               // This is technically only used by the x86_64 headless build
         "set_unlog_bits_vm_space",
-        // "sanity",             // debug only
-        "poison_on_release",  // debug only
-        "extreme_assertions", // debug only
+        // "atrace_heap_size_breakdown",
+        // "dont_enqueue_vm_space_objects",
+        // "sanity",                        // debug only
+        // XXX(kunals): There's an extremely subtle pitfall with "poison_on_release" + "single_worker" wherein
+        // we try to poison memory for a large object but its class has already been moved (or is dead itself)
+        // and we've poisoned the old class address already. In that case, we can't get the current size of the
+        // large object because we have no type information. A simple hack could be to release large objects
+        // before any other space. Technically this could be an issue for the multi-threaded build as well, but
+        // the work packets + OS scheduler need to be scheduled in such a way to make this happen.
+        // "poison_on_release",             // debug only
+        // "extreme_assertions",            // debug only
     ],
     // "debug" build
     flags: [

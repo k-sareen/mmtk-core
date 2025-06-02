@@ -59,6 +59,9 @@ impl<VM: VMBinding> SFT for ImmortalSpace<VM> {
         self.mark_state
             .on_object_metadata_initialization::<VM>(object);
         if self.common.needs_log_bit {
+            // XXX(kunals): If we allocate a new object into the immortal space, and then have a nursery GC,
+            // the mark bit will not be set for the object so the sanity GC inside ART will fail since it
+            // does a full heap GC.
             VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.mark_as_unlogged::<VM>(object, Ordering::SeqCst);
         }
         #[cfg(feature = "vo_bit")]
