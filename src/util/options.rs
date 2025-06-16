@@ -877,7 +877,9 @@ options! {
     /// always in [`GlobalState`].
     is_zygote_process:     bool                  [env_var: false, command_line: true] [always_valid] = false,
     /// The number of times to stress multiple GCs. This is used to amplify the effect of GCs
-    stress_multiple_gc_num_times: usize          [env_var: true, command_line: true] [|v: &usize| *v == 0 || *v > 0 && cfg!(all(feature = "single_worker", feature = "stress_multiple_gc"))] = 0
+    stress_multiple_gc_num_times: usize          [env_var: true, command_line: true] [|v: &usize| *v == 0 || *v > 0 && cfg!(all(feature = "single_worker", feature = "stress_multiple_gc"))] = 0,
+    /// Don't do GC in the harness for SemiSpace. This is used to approximate NoGC using SemiSpace. This allows us to run more benchmarks using in a "NoGC" scenario
+    ss_no_gc_in_harness: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(feature = "ss_no_gc_in_harness")] = false
 }
 
 #[cfg(test)]

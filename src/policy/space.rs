@@ -98,6 +98,19 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
         // - If gc is disabled, we cannot attempt a GC.
         let should_poll =
             VM::VMActivePlan::is_mutator(tls) && VM::VMCollection::is_collection_enabled();
+        #[cfg(feature = "ss_no_gc_in_harness")]
+        let should_poll = if *self.common().options.plan == PlanSelector::SemiSpace
+            && *self.common().options.ss_no_gc_in_harness
+        {
+            should_poll
+                && !self
+                    .common()
+                    .global_state
+                    .inside_harness
+                    .load(std::sync::atomic::Ordering::SeqCst)
+        } else {
+            should_poll
+        };
         // Is a GC allowed here? If we should poll but are not allowed to poll, we will panic.
         // initialize_collection() has to be called so we know GC is initialized.
         let allow_gc = should_poll && self.common().global_state.is_initialized();
