@@ -126,6 +126,20 @@ where
         STScanVMSpaceObjects::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
         STProcessWeakReferences::<VM, P, KIND>::new().execute(worker, mmtk);
         STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
+        #[cfg(feature = "stress_multiple_gc")]
+        {
+            let num_times = *mmtk.options.stress_multiple_gc_num_times;
+            for i in 0..num_times {
+                info!("STDoCollection: Repeating GC iteration {}/{}", i + 1, num_times);
+                STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
+                STScanMutatorRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+                STScanVMSpecificRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+                STScanVMSpaceObjects::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+                STProcessWeakReferences::<VM, P, KIND>::new().execute(worker, mmtk);
+                STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
+                info!("STDoCollection: Finished GC iteration {}/{}", i + 1, num_times);
+            }
+        }
         // We implicitly resume mutators in Scheduler::on_gc_finished so we don't have a separate
         // implementation for that
     }

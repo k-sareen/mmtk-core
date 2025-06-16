@@ -875,7 +875,9 @@ options! {
     /// Is the current runtime the Zygote process? Note that this value is only used once at the start
     /// when creating the [`MMTK`] instance and is not maintained. The correct up-to-date value is
     /// always in [`GlobalState`].
-    is_zygote_process:     bool                  [env_var: false, command_line: true] [always_valid] = false
+    is_zygote_process:     bool                  [env_var: false, command_line: true] [always_valid] = false,
+    /// The number of times to stress multiple GCs. This is used to amplify the effect of GCs
+    stress_multiple_gc_num_times: usize          [env_var: true, command_line: true] [|v: &usize| *v == 0 || *v > 0 && cfg!(all(feature = "single_worker", feature = "stress_multiple_gc"))] = 0
 }
 
 #[cfg(test)]

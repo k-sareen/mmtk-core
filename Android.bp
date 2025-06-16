@@ -36,10 +36,12 @@ rust_library {
         "object_pinning",
         // "semispace_fixed_size",
         "builtin_env_logger",               // This is technically only used by the x86_64 headless build
+        // Used for benchmarking effects of GC performance; also set ART_USE_MMTK_STRESS_MULTIPLE_GC to 1 in mmtk_upcalls.cc
+        // "stress_multiple_gc",
         "set_unlog_bits_vm_space",
         // "atrace_heap_size_breakdown",
         // "dont_enqueue_vm_space_objects",
-        // "sanity",                        // debug only
+        // "sanity",                        // debug only; also set ART_USE_MMTK_SANITY to 1 in mmtk_upcalls.cc and third_party_heap.cc
         // XXX(kunals): There's an extremely subtle pitfall with "poison_on_release" + "single_worker" wherein
         // we try to poison memory for a large object but its class has already been moved (or is dead itself)
         // and we've poisoned the old class address already. In that case, we can't get the current size of the
