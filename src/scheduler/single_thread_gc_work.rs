@@ -53,62 +53,6 @@ where
     }
 }
 
-// Unconstrained,
-// /// Preparation work.  Plans, spaces, GC workers, mutators, etc. should be prepared for GC at
-// /// this stage.
-// Prepare,
-// /// Clear the VO bit metadata.  Mainly used by ImmixSpace.
-// #[cfg(feature = "vo_bit")]
-// ClearVOBits,
-// /// Compute the transtive closure starting from transitively pinning (TP) roots following only strong references.
-// /// No objects in this closure are allow to move.
-// TPinningClosure,
-// /// Trace (non-transitively) pinning roots. Objects pointed by those roots must not move, but their children may. To ensure correctness, these must be processed after TPinningClosure
-// PinningRootsTrace,
-// /// Compute the transtive closure following only strong references.
-// Closure,
-// /// Handle Java-style soft references, and potentially expand the transitive closure.
-// SoftRefClosure,
-// /// Handle Java-style weak references.
-// WeakRefClosure,
-// /// Resurrect Java-style finalizable objects, and potentially expand the transitive closure.
-// FinalRefClosure,
-// /// Handle Java-style phantom references.
-// PhantomRefClosure,
-// /// Let the VM handle VM-specific weak data structures, including weak references, weak
-// /// collections, table of finalizable objects, ephemerons, etc.  Potentially expand the
-// /// transitive closure.
-// ///
-// /// NOTE: This stage is intended to replace the Java-specific weak reference handling stages
-// /// above.
-// VMRefClosure,
-// /// Compute the forwarding addresses of objects (mark-compact-only).
-// CalculateForwarding,
-// /// Scan roots again to initiate another transitive closure to update roots and reference
-// /// after computing the forwarding addresses (mark-compact-only).
-// SecondRoots,
-// /// Update Java-style weak references after computing forwarding addresses (mark-compact-only).
-// ///
-// /// NOTE: This stage should be updated to adapt to the VM-side reference handling.  It shall
-// /// be kept after removing `{Soft,Weak,Final,Phantom}RefClosure`.
-// RefForwarding,
-// /// Update the list of Java-style finalization cadidates and finalizable objects after
-// /// computing forwarding addresses (mark-compact-only).
-// FinalizableForwarding,
-// /// Let the VM handle the forwarding of reference fields in any VM-specific weak data
-// /// structures, including weak references, weak collections, table of finalizable objects,
-// /// ephemerons, etc., after computing forwarding addresses (mark-compact-only).
-// ///
-// /// NOTE: This stage is intended to replace Java-specific forwarding phases above.
-// VMRefForwarding,
-// /// Compact objects (mark-compact-only).
-// Compact,
-// /// Work packets that should be done just before GC shall go here.  This includes releasing
-// /// resources and setting states in plans, spaces, GC workers, mutators, etc.
-// Release,
-// /// Resume mutators and end GC.
-// Final,
-
 impl<VM, P, const KIND: TraceKind> GCWork<VM>
     for STDoCollection<VM, P, KIND>
 where
