@@ -125,7 +125,7 @@ impl<VM: VMBinding> Plan for GenCopy<VM> {
         let full_heap = !self.gen.is_current_gc_nursery();
         self.gen.release(worker);
         if full_heap {
-            self.fromspace().release();
+            self.fromspace_mut().release();
         }
     }
 

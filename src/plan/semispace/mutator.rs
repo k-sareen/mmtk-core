@@ -11,9 +11,13 @@ use crate::plan::AllocationSemantics;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::alloc::BumpAllocator;
 use crate::util::rust_util::likely;
+#[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+use crate::util::rust_util::unlikely;
 use crate::util::{VMMutatorThread, VMWorkerThread};
 use crate::vm::VMBinding;
 use crate::MMTK;
+#[cfg(feature = "ss_no_gc_in_harness")]
+use enum_map::enum_map;
 use enum_map::EnumMap;
 
 pub fn ss_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMWorkerThread) {
@@ -26,9 +30,31 @@ pub fn ss_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMWork
                     && !*plan.common().base.options.is_zygote_process)
         );
 
+        #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+        if unlikely(
+            plan.base()
+                .global_state
+                .no_gc_in_harness
+                .load(std::sync::atomic::Ordering::Relaxed)
+        ) {
+            // Don't rebind the bump allocator if we are simulating NoGC
+            return;
+        }
+
         // Use the default allocator mapping after the first Zygote fork
-        if *(mutator.config.allocator_mapping) != *ALLOCATOR_MAPPING_DEFAULT {
+        if *(mutator.config.allocator_mapping) == *ALLOCATOR_MAPPING_ZYGOTE {
             mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_DEFAULT;
+        }
+
+        #[cfg(all(debug_assertions, feature = "ss_no_gc_in_harness"))]
+        if unlikely(*plan.options().ss_no_gc_in_harness) {
+            // If we are simulating NoGC, we should use the single space allocator mapping
+            // mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_SINGLE_SPACE;
+            assert_eq!(
+                *mutator.config.allocator_mapping,
+                *ALLOCATOR_MAPPING_SINGLE_SPACE,
+                "Allocator mapping should be ALLOCATOR_MAPPING_SINGLE_SPACE if we're simulating NoGC"
+            );
         }
 
         // rebind the allocation bump pointer to the appropriate semispace
@@ -74,6 +100,10 @@ lazy_static! {
         map[AllocationSemantics::Default] = AllocatorSelector::Immix(0);
         map
     };
+    #[cfg(feature = "ss_no_gc_in_harness")]
+    static ref ALLOCATOR_MAPPING_SINGLE_SPACE: EnumMap<AllocationSemantics, AllocatorSelector> = enum_map! {
+        _ => AllocatorSelector::BumpPointer(0),
+    };
 }
 
 pub fn create_ss_mutator<VM: VMBinding>(
@@ -82,12 +112,20 @@ pub fn create_ss_mutator<VM: VMBinding>(
 ) -> Mutator<VM> {
     let ss = mmtk.get_plan().downcast_ref::<SemiSpace<VM>>().unwrap();
     let zygote = ss.common().is_zygote();
+    let mapping: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if likely(!zygote) {
+        &ALLOCATOR_MAPPING_DEFAULT
+    } else {
+        &ALLOCATOR_MAPPING_ZYGOTE
+    };
+    // If we are simulating NoGC, then we should put everything into the same space
+    #[cfg(feature = "ss_no_gc_in_harness")]
+    let mapping: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if *ss.options().ss_no_gc_in_harness {
+        &ALLOCATOR_MAPPING_SINGLE_SPACE
+    } else {
+        mapping
+    };
     let config = MutatorConfig {
-        allocator_mapping: if likely(!zygote) {
-            &ALLOCATOR_MAPPING_DEFAULT
-        } else {
-            &ALLOCATOR_MAPPING_ZYGOTE
-        },
+        allocator_mapping: mapping,
         space_mapping: Box::new({
             let mut vec = create_space_mapping(RESERVED_ALLOCATORS, true, ss);
             vec.push((AllocatorSelector::BumpPointer(0), ss.tospace()));

@@ -7,9 +7,13 @@ use crate::policy::space::{CommonSpace, Space};
 use crate::scheduler::GCWorker;
 use crate::util::alloc::allocator::AllocatorContext;
 use crate::util::heap::{MonotonePageResource, PageResource};
+#[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+use crate::util::metadata::mark_bit::MarkState;
 use crate::util::metadata::{extract_side_metadata, MetadataSpec};
 use crate::util::object_enum::ObjectEnumerator;
 use crate::util::object_forwarding;
+#[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+use crate::util::rust_util::unlikely;
 use crate::util::{copy::*, object_enum};
 use crate::util::{Address, ObjectReference};
 use crate::vm::*;
@@ -22,6 +26,8 @@ pub struct CopySpace<VM: VMBinding> {
     common: CommonSpace<VM>,
     pr: MonotonePageResource<VM>,
     from_space: AtomicBool,
+    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+    mark_state: MarkState,
 }
 
 impl<VM: VMBinding> SFT for CopySpace<VM> {
@@ -29,7 +35,31 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
         self.get_name()
     }
 
+    #[cfg(not(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace")))]
     fn is_live(&self, object: ObjectReference) -> bool {
+        if !self.is_from_space() {
+            // XXX(kunals): For discontiguous spaces, we can't check just
+            // against the cursor since the cursor could potentially be behind
+            // the actual live object if a new chunk has been allocated behind
+            // old chunks. Hence, only check against the cursor for fixed size
+            // contiguous spaces.
+            #[cfg(feature = "semispace_fixed_size")]
+            return object.to_raw_address() < self.pr.cursor();
+            #[cfg(not(feature = "semispace_fixed_size"))]
+            true
+        } else {
+            object_forwarding::is_forwarded::<VM>(object)
+        }
+    }
+
+    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+    fn is_live(&self, object: ObjectReference) -> bool {
+        if unlikely(self.is_simulating_nogc()) {
+            // If we are simulating no GC, we always return true for is_live.
+            // This is because we are not actually collecting objects in this space.
+            return true;
+        }
+
         if !self.is_from_space() {
             // XXX(kunals): For discontiguous spaces, we can't check just
             // against the cursor since the cursor could potentially be behind
@@ -200,6 +230,8 @@ impl<VM: VMBinding> CopySpace<VM> {
             extract_side_metadata(&[
                 *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC,
+                #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+                *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
             ]),
         ));
         CopySpace {
@@ -210,14 +242,35 @@ impl<VM: VMBinding> CopySpace<VM> {
             },
             common,
             from_space: AtomicBool::new(from_space),
+            #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+            mark_state: MarkState::new(),
         }
     }
 
-    pub fn prepare(&self, from_space: bool) {
+    #[cfg(not(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace")))]
+    pub fn prepare(&mut self, from_space: bool) {
         self.from_space.store(from_space, Ordering::SeqCst);
     }
 
-    pub fn release(&self) {
+    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+    pub fn prepare(&mut self, from_space: bool) {
+        if unlikely(self.is_simulating_nogc()) {
+            self.mark_state.on_global_prepare::<VM>();
+            for (addr, size) in self.pr.iterate_allocated_regions() {
+                debug!(
+                    "{:?}: reset mark bit from {} to {}",
+                    self.name(),
+                    addr,
+                    addr + size
+                );
+                self.mark_state.on_block_reset::<VM>(addr, size);
+            }
+        } else {
+            self.from_space.store(from_space, Ordering::SeqCst);
+        }
+    }
+
+    fn __release(&self) {
         for (start, size) in self.pr.iterate_allocated_regions() {
             // Clear the forwarding bits if it is on the side.
             if let MetadataSpec::OnSide(side_forwarding_status_table) =
@@ -249,11 +302,41 @@ impl<VM: VMBinding> CopySpace<VM> {
         self.from_space.store(false, Ordering::SeqCst);
     }
 
+    #[cfg(not(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace")))]
+    pub fn release(&mut self) {
+        self.__release();
+    }
+
+    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+    pub fn release(&mut self) {
+        if unlikely(self.is_simulating_nogc()) {
+            self.mark_state.on_global_release::<VM>();
+        } else {
+            self.__release();
+        }
+    }
+
+    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+    fn is_simulating_nogc(&self) -> bool {
+        self.common().global_state.no_gc_in_harness.load(Ordering::Relaxed)
+    }
+
     fn is_from_space(&self) -> bool {
         self.from_space.load(Ordering::SeqCst)
     }
 
+    #[cfg(not(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace")))]
     pub fn trace_object<Q: ObjectQueue>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+        semantics: Option<CopySemantics>,
+        worker: &mut GCWorker<VM>,
+    ) -> ObjectReference {
+        self.__trace_object(queue, object, semantics, worker)
+    }
+
+    fn __trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,
         object: ObjectReference,
@@ -306,6 +389,33 @@ impl<VM: VMBinding> CopySpace<VM> {
             trace!("Copied [{:?} -> {:?}]", object, new_object);
             new_object
         }
+    }
+
+    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+    pub fn trace_object<Q: ObjectQueue>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+        semantics: Option<CopySemantics>,
+        worker: &mut GCWorker<VM>,
+    ) -> ObjectReference {
+        if unlikely(self.is_simulating_nogc()) {
+            if self.mark_state.test_and_mark::<VM>(object) {
+                // Set the unlog bit if required
+                if self.common.needs_log_bit {
+                    VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC.store_atomic::<VM, u8>(
+                        object,
+                        1,
+                        None,
+                        Ordering::SeqCst,
+                    );
+                }
+                queue.enqueue(object);
+            }
+            return object;
+        }
+
+        self.__trace_object(queue, object, semantics, worker)
     }
 
     #[allow(dead_code)] // Only used with certain features (such as sanity)

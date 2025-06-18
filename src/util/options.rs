@@ -295,6 +295,12 @@ impl Options {
         *self.stress_factor != DEFAULT_STRESS_FACTOR
             || *self.analysis_factor != DEFAULT_STRESS_FACTOR
     }
+
+    /// Are we a SemiSpace GC simulating NoGC in the harness?
+    #[cfg(feature = "ss_no_gc_in_harness")]
+    pub fn is_ss_nogc_in_harness(&self) -> bool {
+        *self.plan == PlanSelector::SemiSpace && *self.ss_no_gc_in_harness
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -412,8 +412,14 @@ impl<VM: VMBinding> MMTK<VM> {
     /// This is usually called by the benchmark harness as its last step before the actual benchmark.
     pub fn harness_begin(&self, tls: VMMutatorThread) {
         probe!(mmtk, harness_begin);
+        self.state.is_harness_begin_gc.store(true, Ordering::SeqCst);
         self.handle_user_collection_request(tls, true, true);
+        self.state.is_harness_begin_gc.store(false, Ordering::SeqCst);
         self.state.inside_harness.store(true, Ordering::SeqCst);
+        #[cfg(feature = "ss_no_gc_in_harness")]
+        if self.options.is_ss_nogc_in_harness() {
+            self.state.no_gc_in_harness.store(true, Ordering::SeqCst);
+        }
         self.stats.start_all();
         #[cfg(feature = "measure_large_object_alloc")]
         {
@@ -429,6 +435,10 @@ impl<VM: VMBinding> MMTK<VM> {
     pub fn harness_end(&'static self) {
         self.stats.stop_all(self);
         self.state.inside_harness.store(false, Ordering::SeqCst);
+        #[cfg(feature = "ss_no_gc_in_harness")]
+        if self.options.is_ss_nogc_in_harness() {
+            self.state.no_gc_in_harness.store(false, Ordering::SeqCst);
+        }
         #[cfg(feature = "measure_slowpath")]
         {
             let timings = self.state.slowpath_timings.lock().unwrap();

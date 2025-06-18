@@ -72,6 +72,11 @@ pub struct GlobalState {
     /// Slowpath timings for mutators
     #[cfg(feature = "measure_slowpath")]
     pub(crate) slowpath_timings: Mutex<Vec<u64>>,
+    /// Is this GC the harness begin GC?
+    pub(crate) is_harness_begin_gc: AtomicBool,
+    /// Is SemiSpace simulating a NoGC in the harness?
+    #[cfg(feature = "ss_no_gc_in_harness")]
+    pub(crate) no_gc_in_harness: AtomicBool,
 }
 
 impl GlobalState {
@@ -273,6 +278,9 @@ impl Default for GlobalState {
             live_bytes_in_last_gc: AtomicRefCell::new(HashMap::new()),
             #[cfg(feature = "measure_slowpath")]
             slowpath_timings: Mutex::new(vec![]),
+            is_harness_begin_gc: AtomicBool::new(false),
+            #[cfg(feature = "ss_no_gc_in_harness")]
+            no_gc_in_harness: AtomicBool::new(false),
         }
     }
 }

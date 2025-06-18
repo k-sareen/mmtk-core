@@ -119,6 +119,13 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         );
 
         if likely(!self.common().is_zygote()) {
+            #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+            if unlikely(self.base().global_state.no_gc_in_harness.load(Ordering::SeqCst)) {
+                self.copyspace0.prepare(false);
+                self.copyspace1.prepare(false);
+                return;
+            }
+
             self.hi
                 .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst); // flip the semi-spaces
                                                                            // prepare each of the collected regions
@@ -148,7 +155,7 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         self.common.release(worker, true);
         // release the collected region
         if likely(!self.common().is_zygote()) {
-            self.fromspace().release();
+            self.fromspace_mut().release();
         }
     }
 
@@ -161,6 +168,10 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
     }
 
     fn get_collection_reserved_pages(&self) -> usize {
+        #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+        if unlikely(self.base().global_state.no_gc_in_harness.load(Ordering::SeqCst)) {
+            return self.common.get_collection_reserved_pages();
+        }
         self.tospace().reserved_pages() + self.common.get_collection_reserved_pages()
     }
 
