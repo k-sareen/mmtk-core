@@ -4,6 +4,8 @@ use crate::plan::{Mutator, MutatorContext};
 use crate::plan::{Plan, PlanTraceObject};
 use crate::policy::gc_work::TraceKind;
 use crate::scheduler::*;
+#[cfg(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))]
+use crate::util::rust_util::unlikely;
 use crate::util::ObjectReference;
 use crate::vm::*;
 use crate::vm::slot::Slot;
@@ -338,6 +340,15 @@ where
     P: Plan<VM = VM> + PlanTraceObject<VM>,
 {
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
+        #[cfg(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))]
+        {
+            let fixed_cost_gc = self.plan.base().global_state.inside_harness.load(Ordering::Relaxed)
+                && *self.plan.options().ss_no_gc_fixed_cost
+                && self.plan.options().is_ss_nogc_in_harness();
+            if unlikely(fixed_cost_gc) {
+                return object;
+            }
+        }
         self.trace_object(object)
     }
 }
@@ -358,6 +369,15 @@ where
         // set the length
         unsafe {
             self.worker().mark_stack.set_len(len);
+        }
+        #[cfg(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))]
+        {
+            let fixed_cost_gc = self.plan.base().global_state.inside_harness.load(Ordering::Relaxed)
+                && *self.plan.options().ss_no_gc_fixed_cost
+                && self.plan.options().is_ss_nogc_in_harness();
+            if unlikely(fixed_cost_gc) {
+                self.worker().mark_stack.clear();
+            }
         }
         self.process_slots();
     }
@@ -574,6 +594,15 @@ where
         probe!(mmtk, scan_vm_space_objects_start);
         debug_assert!(closure.is_empty());
         let mut scan_closure = |objects: &Vec<ObjectReference>| {
+            #[cfg(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))]
+            {
+                let fixed_cost_gc = mmtk.state.inside_harness.load(Ordering::Relaxed)
+                    && *mmtk.options.ss_no_gc_fixed_cost
+                    && mmtk.options.is_ss_nogc_in_harness();
+                if unlikely(fixed_cost_gc) {
+                    return;
+                }
+            }
             for object in objects {
                 closure.enqueue(*object);
             }
@@ -628,6 +657,17 @@ where
         let mmtk = worker.mmtk;
         let mut closure = STObjectGraphTraversalClosure::<VM, P, KIND>::new(mmtk, worker);
         let result = func(&mut closure);
+
+        #[cfg(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))]
+        {
+            let fixed_cost_gc = mmtk.state.inside_harness.load(Ordering::Relaxed)
+                && *mmtk.options.ss_no_gc_fixed_cost
+                && mmtk.options.is_ss_nogc_in_harness();
+            if unlikely(fixed_cost_gc) {
+                return result;
+            }
+        }
+
         closure.process_slots();
         result
     }

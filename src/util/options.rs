@@ -885,7 +885,9 @@ options! {
     /// The number of times to stress multiple GCs. This is used to amplify the effect of GCs
     stress_multiple_gc_num_times: usize          [env_var: true, command_line: true] [|v: &usize| *v == 0 || *v > 0 && cfg!(all(feature = "single_worker", feature = "stress_multiple_gc"))] = 0,
     /// Don't do GC in the harness for SemiSpace. This is used to approximate NoGC using SemiSpace. This allows us to run more benchmarks using in a "NoGC" scenario
-    ss_no_gc_in_harness: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(feature = "ss_no_gc_in_harness")] = false
+    ss_no_gc_in_harness: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(feature = "ss_no_gc_in_harness")] = false,
+    /// Only perform the fixed cost operations of a GC, namely suspending mutators, scanning roots, and then resuming mutators.
+    ss_no_gc_fixed_cost: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))] = false
 }
 
 #[cfg(test)]
