@@ -27,7 +27,7 @@ rust_library {
     features: [
         "default",
         "vm_space",
-        "nogc_trace",
+        "nogc_trace",                       // Perform tracing in NoGC to benchmark tracing performance
         "perf_counter",
         // "eager_zeroing",
         "single_worker",                    // Single-threaded build
