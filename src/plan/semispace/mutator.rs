@@ -11,7 +11,7 @@ use crate::plan::AllocationSemantics;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::alloc::BumpAllocator;
 use crate::util::rust_util::likely;
-#[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+#[cfg(feature = "ss_no_gc_in_harness")]
 use crate::util::rust_util::unlikely;
 use crate::util::{VMMutatorThread, VMWorkerThread};
 use crate::vm::VMBinding;
@@ -44,6 +44,13 @@ pub fn ss_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMWork
         // Use the default allocator mapping after the first Zygote fork
         if *(mutator.config.allocator_mapping) == *ALLOCATOR_MAPPING_ZYGOTE {
             mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_DEFAULT;
+            #[cfg(feature = "ss_no_gc_in_harness")]
+            {
+                // If we are simulating NoGC, we should use the single space allocator mapping
+                if unlikely(*plan.options().ss_no_gc_in_harness) {
+                    mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_SINGLE_SPACE;
+                }
+            }
         }
 
         #[cfg(all(debug_assertions, feature = "ss_no_gc_in_harness"))]
@@ -113,16 +120,18 @@ pub fn create_ss_mutator<VM: VMBinding>(
     let ss = mmtk.get_plan().downcast_ref::<SemiSpace<VM>>().unwrap();
     let zygote = ss.common().is_zygote();
     let mapping: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if likely(!zygote) {
-        &ALLOCATOR_MAPPING_DEFAULT
+        let m: &'static EnumMap<AllocationSemantics, AllocatorSelector>;
+        m = &ALLOCATOR_MAPPING_DEFAULT;
+        // If we are simulating NoGC, then we should put everything into the same space
+        #[cfg(feature = "ss_no_gc_in_harness")]
+        let m: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if unlikely(*ss.options().ss_no_gc_in_harness) {
+            &ALLOCATOR_MAPPING_SINGLE_SPACE
+        } else {
+            m
+        };
+        m
     } else {
         &ALLOCATOR_MAPPING_ZYGOTE
-    };
-    // If we are simulating NoGC, then we should put everything into the same space
-    #[cfg(feature = "ss_no_gc_in_harness")]
-    let mapping: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if *ss.options().ss_no_gc_in_harness {
-        &ALLOCATOR_MAPPING_SINGLE_SPACE
-    } else {
-        mapping
     };
     let config = MutatorConfig {
         allocator_mapping: mapping,
