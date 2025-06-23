@@ -376,7 +376,12 @@ where
                 && *self.plan.options().ss_no_gc_fixed_cost
                 && self.plan.options().is_ss_nogc_in_harness();
             if unlikely(fixed_cost_gc) {
-                self.worker().mark_stack.clear();
+                // SAFETY: We are the only thread accessing the mark stack so we can
+                // set the length
+                unsafe {
+                    self.worker().mark_stack.set_len(0);
+                }
+                return;
             }
         }
         self.process_slots();
