@@ -77,6 +77,8 @@ pub struct GlobalState {
     /// Is SemiSpace simulating a NoGC in the harness?
     #[cfg(feature = "ss_no_gc_in_harness")]
     pub(crate) no_gc_in_harness: AtomicBool,
+    #[cfg(feature = "ss_do_trace_before_gc")]
+    pub(crate) ss_pre_gc_trace: AtomicBool,
 }
 
 impl GlobalState {
@@ -281,6 +283,8 @@ impl Default for GlobalState {
             is_harness_begin_gc: AtomicBool::new(false),
             #[cfg(feature = "ss_no_gc_in_harness")]
             no_gc_in_harness: AtomicBool::new(false),
+            #[cfg(feature = "ss_do_trace_before_gc")]
+            ss_pre_gc_trace: AtomicBool::new(false),
         }
     }
 }

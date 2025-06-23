@@ -10,6 +10,8 @@ use crate::util::heap::{FreeListPageResource, PageResource};
 use crate::util::metadata;
 use crate::util::object_enum::ObjectEnumerator;
 use crate::util::opaque_pointer::*;
+#[cfg(feature = "ss_do_trace_before_gc")]
+use crate::util::rust_util::unlikely;
 use crate::util::treadmill::TreadMill;
 use crate::util::{Address, ObjectReference};
 use crate::vm::ObjectModel;
@@ -227,16 +229,30 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
     }
 
     pub fn prepare(&mut self, full_heap: bool) {
+        self.in_nursery_gc = !full_heap;
+
         if full_heap {
             debug_assert!(self.treadmill.is_from_space_empty());
             self.mark_state = MARK_BIT - self.mark_state;
         }
 
+        #[cfg(feature = "ss_do_trace_before_gc")]
+        if unlikely(self.is_ss_pre_gc_trace()) {
+            return;
+        }
+
         self.treadmill.flip(full_heap);
-        self.in_nursery_gc = !full_heap;
     }
 
     pub fn release(&mut self, full_heap: bool) {
+        #[cfg(feature = "ss_do_trace_before_gc")]
+        if unlikely(self.is_ss_pre_gc_trace()) {
+            for object in self.enumerate_large_objects() {
+                self.set_mark_no_side_effect(object, self.mark_state);
+            }
+            return;
+        }
+
         self.sweep_large_objects(full_heap);
         debug_assert!(self.treadmill.is_nursery_empty());
         debug_assert!(self.treadmill.is_from_space_empty());
@@ -250,10 +266,53 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
         }
     }
 
+    #[cfg(not(feature = "ss_do_trace_before_gc"))]
+    pub fn trace_object<Q: ObjectQueue>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+    ) -> ObjectReference {
+        self.__trace_object(queue, object)
+    }
+
+    #[cfg(feature = "ss_do_trace_before_gc")]
+    pub fn trace_object<Q: ObjectQueue>(
+        &self,
+        queue: &mut Q,
+        object: ObjectReference,
+    ) -> ObjectReference {
+        if unlikely(self.is_ss_pre_gc_trace()) {
+            let nursery_object = self.is_in_nursery(object);
+            let is_zygote_object = self.has_zygote_space()
+                && self.treadmill.is_zygote_object(object);
+            trace!(
+                "LOS object {} {} a nursery object",
+                object,
+                if nursery_object { "is" } else { "is not" }
+            );
+            if !self.in_nursery_gc || nursery_object {
+                if self.test_and_mark_no_side_effect(object, self.mark_state) {
+                    trace!("LOS object {} is being marked now", object);
+                    if !is_zygote_object || (!self.in_nursery_gc && is_zygote_object) {
+                        queue.enqueue(object);
+                    }
+                } else {
+                    trace!(
+                        "LOS object {} is not being marked now, it was marked before",
+                        object
+                    );
+                }
+            }
+
+            return object;
+        }
+        self.__trace_object(queue, object)
+    }
+
     // Allow nested-if for this function to make it clear that test_and_mark() is only executed
     // for the outer condition is met.
     #[allow(clippy::collapsible_if)]
-    pub fn trace_object<Q: ObjectQueue>(
+    fn __trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,
         object: ObjectReference,
@@ -298,6 +357,11 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             }
         }
         object
+    }
+
+    #[cfg(feature = "ss_do_trace_before_gc")]
+    fn is_ss_pre_gc_trace(&self) -> bool {
+        self.common().global_state.ss_pre_gc_trace.load(Ordering::Relaxed)
     }
 
     fn sweep_large_objects(&mut self, full_heap: bool) {
@@ -373,6 +437,71 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
             }
         }
         true
+    }
+
+    /// Test if the object's mark bit is the same as the given value. If it is not the same,
+    /// the method will attempt to mark the object *without* clearing its nursery bit. If the
+    /// attempt succeeds, the method will return true, meaning the object is marked by this
+    /// invocation. Otherwise, it returns false.
+    #[cfg(feature = "ss_do_trace_before_gc")]
+    fn test_and_mark_no_side_effect(&self, object: ObjectReference, value: u8) -> bool {
+        loop {
+            let mask = if self.in_nursery_gc {
+                LOS_BIT_MASK
+            } else {
+                MARK_BIT
+            };
+            let old_value = VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
+                object,
+                None,
+                Ordering::SeqCst,
+            );
+            let mark_bit = old_value & mask;
+            if mark_bit == value {
+                return false;
+            }
+            if VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC
+                .compare_exchange_metadata::<VM, u8>(
+                    object,
+                    old_value,
+                    (old_value & !mask) | value,
+                    None,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                break;
+            }
+        }
+        true
+    }
+
+    #[cfg(feature = "ss_do_trace_before_gc")]
+    fn set_mark_no_side_effect(&self, object: ObjectReference, value: u8) {
+        loop {
+            let mask = if self.in_nursery_gc {
+                LOS_BIT_MASK
+            } else {
+                MARK_BIT
+            };
+            let old_value = VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC.load_atomic::<VM, u8>(
+                object,
+                None,
+                Ordering::SeqCst,
+            );
+            let mark_bit = old_value & mask;
+            if mark_bit == value {
+                return;
+            }
+            VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC
+                .store_atomic::<VM, u8>(
+                    object,
+                    (old_value & !mask) | value,
+                    None,
+                    Ordering::SeqCst,
+                );
+        }
     }
 
     fn test_mark_bit(&self, object: ObjectReference, value: u8) -> bool {

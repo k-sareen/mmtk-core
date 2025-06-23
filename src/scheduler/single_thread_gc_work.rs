@@ -66,6 +66,24 @@ where
             atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, format!("{:?} GC", *mmtk.options.plan).as_str());
         let mut closure = STObjectGraphTraversalClosure::<VM, P, KIND>::new(mmtk, worker);
         STStopMutators::<VM, P>::new().execute(worker, mmtk);
+        #[cfg(all(feature = "stress_multiple_gc", feature = "ss_do_trace_before_gc"))]
+        {
+            if unlikely(mmtk.options.is_ss_do_trace_before_gc()) {
+                mmtk.state.ss_pre_gc_trace.store(true, Ordering::Relaxed);
+                let num_times = *mmtk.options.stress_multiple_gc_num_times;
+                for i in 0..num_times {
+                    info!("STDoCollection: Repeating pre-GC iteration {}/{}", i + 1, num_times);
+                    STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
+                    STScanMutatorRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+                    STScanVMSpecificRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+                    STScanVMSpaceObjects::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
+                    STProcessWeakReferences::<VM, P, KIND>::new().execute(worker, mmtk);
+                    STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
+                    info!("STDoCollection: Finished pre-GC iteration {}/{}", i + 1, num_times);
+                }
+                mmtk.state.ss_pre_gc_trace.store(false, Ordering::Relaxed);
+            }
+        }
         STPrepare::<VM, P>::new(mmtk).execute(worker, mmtk);
         STScanMutatorRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
         STScanVMSpecificRoots::<VM, P, KIND>::new().execute(&mut closure, worker, mmtk);
@@ -74,6 +92,11 @@ where
         STRelease::<VM, P>::new(mmtk).execute(worker, mmtk);
         #[cfg(feature = "stress_multiple_gc")]
         {
+            #[cfg(feature = "ss_do_trace_before_gc")]
+            if unlikely(mmtk.options.is_ss_do_trace_before_gc()) {
+                return;
+            }
+
             let num_times = *mmtk.options.stress_multiple_gc_num_times;
             for i in 0..num_times {
                 info!("STDoCollection: Repeating GC iteration {}/{}", i + 1, num_times);
@@ -278,8 +301,10 @@ where
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
         debug_assert!(
             <VM as VMBinding>::VMObjectModel::is_object_sane(object),
-            "Object {:?} is not sane!",
+            "Object {:?} is not sane!\n  Dump RAM around object{}\n  Dumping /proc/maps:\n{}",
             object,
+            crate::util::memory::dump_ram_around_address(object.to_raw_address(), 128),
+            crate::util::memory::get_process_memory_maps(),
         );
         #[cfg(feature = "trace_scan_object_count")]
         self.plan.base().global_state.trace_object_count.fetch_add(1, Ordering::Relaxed);
@@ -293,6 +318,15 @@ where
         if self.plan.base().vm_space.in_space(object) {
             return;
         }
+        debug_assert!(
+            <VM as VMBinding>::VMObjectModel::is_object_sane(object),
+            "Object {:?} from slot {:?} is not sane!\n  Dump RAM around object{}\n  \nDump RAM around slot{}\n  Dumping /proc/maps:\n{}",
+            object,
+            slot,
+            crate::util::memory::dump_ram_around_address(object.to_raw_address(), 128),
+            crate::util::memory::dump_ram_around_address(slot.as_address(), 128),
+            crate::util::memory::get_process_memory_maps(),
+        );
         let new_object = self.trace_object(object);
         if P::may_move_objects::<KIND>() && new_object != object {
             slot.store(new_object);

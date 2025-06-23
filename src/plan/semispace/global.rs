@@ -125,6 +125,12 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
                 self.copyspace1.prepare(false);
                 return;
             }
+            #[cfg(feature = "ss_do_trace_before_gc")]
+            if unlikely(self.base().global_state.ss_pre_gc_trace.load(Ordering::SeqCst)) {
+                self.copyspace0.prepare(false);
+                self.copyspace1.prepare(false);
+                return;
+            }
 
             self.hi
                 .store(!self.hi.load(Ordering::SeqCst), Ordering::SeqCst); // flip the semi-spaces

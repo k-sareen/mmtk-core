@@ -41,6 +41,17 @@ pub fn ss_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMWork
             return;
         }
 
+        #[cfg(feature = "ss_do_trace_before_gc")]
+        if unlikely(
+            plan.base()
+                .global_state
+                .ss_pre_gc_trace
+                .load(std::sync::atomic::Ordering::Relaxed)
+        ) {
+            // Don't rebind the bump allocator if we are the pre-GC trace
+            return;
+        }
+
         // Use the default allocator mapping after the first Zygote fork
         if *(mutator.config.allocator_mapping) == *ALLOCATOR_MAPPING_ZYGOTE {
             mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_DEFAULT;

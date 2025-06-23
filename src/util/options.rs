@@ -301,6 +301,11 @@ impl Options {
     pub fn is_ss_nogc_in_harness(&self) -> bool {
         *self.plan == PlanSelector::SemiSpace && *self.ss_no_gc_in_harness
     }
+
+    #[cfg(feature = "ss_do_trace_before_gc")]
+    pub fn is_ss_do_trace_before_gc(&self) -> bool {
+        *self.plan == PlanSelector::SemiSpace && *self.ss_do_trace_before_gc
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -887,7 +892,9 @@ options! {
     /// Don't do GC in the harness for SemiSpace. This is used to approximate NoGC using SemiSpace. This allows us to run more benchmarks using in a "NoGC" scenario
     ss_no_gc_in_harness: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(feature = "ss_no_gc_in_harness")] = false,
     /// Only perform the fixed cost operations of a GC, namely suspending mutators, scanning roots, and then resuming mutators.
-    ss_no_gc_fixed_cost: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))] = false
+    ss_no_gc_fixed_cost: bool                    [env_var: true, command_line: true] [|v: &bool| !v || cfg!(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))] = false,
+    /// Do a trace using the mark-bit for SemiSpace before a copying GC.
+    ss_do_trace_before_gc: bool                  [env_var: true, command_line: true] [|v: &bool| !v || cfg!(all(feature = "single_worker", feature = "stress_multiple_gc", feature = "ss_do_trace_before_gc"))] = false
 }
 
 #[cfg(test)]
