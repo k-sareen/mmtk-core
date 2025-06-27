@@ -118,7 +118,10 @@ lazy_static! {
         map[AllocationSemantics::Default] = AllocatorSelector::Immix(0);
         map
     };
-    #[cfg(feature = "ss_no_gc_in_harness")]
+}
+
+#[cfg(feature = "ss_no_gc_in_harness")]
+lazy_static! {
     static ref ALLOCATOR_MAPPING_SINGLE_SPACE: EnumMap<AllocationSemantics, AllocatorSelector> = enum_map! {
         _ => AllocatorSelector::BumpPointer(0),
     };
