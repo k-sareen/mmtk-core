@@ -523,6 +523,12 @@ impl<VM: VMBinding> BasePlan<VM> {
         self.ro_space.release();
         #[cfg(feature = "vm_space")]
         self.vm_space.release();
+
+        // Reset stress GC state after a GC. This means that any user triggered
+        // GC, such as the `harness_begin` GC will also reset the allocation bytes
+        self.global_state
+            .allocation_bytes
+            .store(0, Ordering::SeqCst);
     }
 
     pub(crate) fn collection_required<P: Plan>(&self, plan: &P, space_full: bool) -> bool {
@@ -538,9 +544,6 @@ impl<VM: VMBinding> BasePlan<VM> {
                 *self.options.stress_factor
             );
             debug!("Doing stress GC");
-            self.global_state
-                .allocation_bytes
-                .store(0, Ordering::SeqCst);
         }
 
         debug!(
