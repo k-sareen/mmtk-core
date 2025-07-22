@@ -715,7 +715,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         } else if self.is_marked(object) {
             // We won the forwarding race but the object is already marked so we clear the
             // forwarding status and return the unmoved object
-            object_forwarding::clear_forwarding_bits::<VM>(object);
+            // object_forwarding::clear_forwarding_bits::<VM>(object);
             object_forwarding::set_mark_word::<VM>(object, mark_word);
             object
         } else {
@@ -725,7 +725,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 || (!nursery_collection && self.defrag.space_exhausted())
             {
                 self.mark_state.test_and_mark::<VM>(object);
-                object_forwarding::clear_forwarding_bits::<VM>(object);
+                // object_forwarding::clear_forwarding_bits::<VM>(object);
                 object_forwarding::set_mark_word::<VM>(object, mark_word);
                 Block::containing(object).set_state(BlockState::Marked);
 

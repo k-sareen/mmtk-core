@@ -112,7 +112,7 @@ impl<VM: VMBinding> GCWorkerCopyContext<VM> {
     pub fn post_copy(&mut self, object: ObjectReference, bytes: usize, semantics: CopySemantics) {
         if VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC.is_in_header() {
             // Clear forwarding bits if the forwarding bits are in the header.
-            object_forwarding::clear_forwarding_bits::<VM>(object);
+            // object_forwarding::clear_forwarding_bits::<VM>(object);
         } else {
             // We ensure no stale side forwarding bits exist before tracing.
             debug_assert!(!object_forwarding::is_forwarded_or_being_forwarded::<VM>(

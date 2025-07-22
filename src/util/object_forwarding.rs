@@ -263,6 +263,7 @@ fn state_is_forwarded_or_being_forwarded(mark_word: u32) -> bool {
 
 /// Zero the forwarding bits of an object.
 /// This function is used on new objects.
+#[allow(dead_code)]
 pub fn clear_forwarding_bits<VM: VMBinding>(object: ObjectReference) {
     if cfg!(feature = "single_worker") {
         unsafe {

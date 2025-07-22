@@ -219,7 +219,10 @@ impl<VM: VMBinding> MMTK<VM> {
         use crate::util::constants::LOG_BYTES_IN_PAGE;
         use crate::util::heap::layout::vm_layout::vm_layout;
         let heap_pages = (vm_layout().heap_end - vm_layout().heap_start) >> LOG_BYTES_IN_PAGE;
-        if *options.plan != PlanSelector::NoGC {
+        if *options.plan != PlanSelector::NoGC
+            && *options.plan != PlanSelector::SemiSpace
+            && *options.plan != PlanSelector::Immix
+        {
             let quarantine_strategy =
                 MmapStrategy::new(false, crate::util::memory::MmapProtection::NoAccess);
             MMAPPER.quarantine_address_range(
@@ -234,7 +237,10 @@ impl<VM: VMBinding> MMTK<VM> {
         // each page in the heap has been touched at least once and hence the mutator should not
         // get page faults when allocating. This can drastically improve the performance of the
         // mutator
-        if *options.plan == PlanSelector::NoGC {
+        if *options.plan == PlanSelector::NoGC
+            || *options.plan == PlanSelector::SemiSpace
+            || *options.plan == PlanSelector::Immix
+        {
             let nogc_strategy = MmapStrategy::new(
                 *options.transparent_hugepages,
                 crate::util::memory::MmapProtection::ReadWrite,
