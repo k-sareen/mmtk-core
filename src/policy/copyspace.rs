@@ -90,9 +90,9 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
             // the actual live object if a new chunk has been allocated behind
             // old chunks. Hence, only check against the cursor for fixed size
             // contiguous spaces.
-            #[cfg(feature = "semispace_fixed_size")]
+            #[cfg(feature = "ss_fixed_size")]
             return object.to_raw_address() < self.pr.cursor();
-            #[cfg(not(feature = "semispace_fixed_size"))]
+            #[cfg(not(feature = "ss_fixed_size"))]
             true
         } else {
             object_forwarding::is_forwarded::<VM>(object)
@@ -533,6 +533,17 @@ impl<VM: VMBinding> CopySpace<VM> {
             );
         }
         trace!("Unprotect {:x} {:x}", start, start + extent);
+    }
+
+    #[cfg(feature = "ss_fixed_size")]
+    pub fn zero_until_end(&self) {
+        if !self.common().contiguous {
+            panic!("Can't zero until end for discontiguous CopySpace!");
+        }
+
+        let cursor = self.pr.cursor();
+        let extent = self.common().extent;
+        crate::util::memory::zero(cursor, extent);
     }
 }
 

@@ -234,7 +234,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
                     "copyspace0",
                     true,
                     false,
-                    if cfg!(feature = "semispace_fixed_size") {
+                    if cfg!(feature = "ss_fixed_size") {
                         VMRequest::fixed_size(_semi_space_size)
                     } else {
                         VMRequest::discontiguous()
@@ -247,7 +247,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
                     "copyspace1",
                     true,
                     false,
-                    if cfg!(feature = "semispace_fixed_size") {
+                    if cfg!(feature = "ss_fixed_size") {
                         VMRequest::fixed_size(_semi_space_size)
                     } else {
                         VMRequest::discontiguous()

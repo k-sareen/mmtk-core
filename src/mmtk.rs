@@ -419,6 +419,16 @@ impl<VM: VMBinding> MMTK<VM> {
         #[cfg(feature = "ss_no_gc_in_harness")]
         if self.options.is_ss_nogc_in_harness() {
             self.state.no_gc_in_harness.store(true, Ordering::SeqCst);
+
+            #[cfg(feature = "ss_fixed_size")]
+            {
+                use crate::util::constants::LOG_BYTES_IN_PAGE;
+                self.get_plan()
+                    .downcast_ref::<crate::plan::semispace::SemiSpace<VM>>()
+                    .unwrap()
+                    .tospace()
+                    .zero_until_end();
+            }
         }
         self.stats.start_all();
         #[cfg(feature = "measure_large_object_alloc")]
