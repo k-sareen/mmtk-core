@@ -12,6 +12,8 @@ use crate::util::ObjectReference;
 use crate::util::heap::layout::vm_layout::{vm_layout, LOG_BYTES_IN_CHUNK};
 use crate::util::heap::{PageResource, VMRequest};
 use crate::util::options::{Options, PlanSelector};
+#[cfg(feature = "ss_no_gc_in_harness")]
+use crate::util::rust_util::likely;
 use crate::vm::{ActivePlan, Collection};
 
 use crate::util::constants::{LOG_BYTES_IN_MBYTE, LOG_BYTES_IN_PAGE};
@@ -170,7 +172,16 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                             atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Zeroing Pages");
                         let plan = *(self.get_gc_trigger().options.plan);
                         if self.common().zeroed && plan != PlanSelector::NoGC {
-                            memory::zero(res.start, bytes);
+                            cfg_if::cfg_if! {
+                                if #[cfg(feature = "ss_no_gc_in_harness")] {
+                                    if likely(!self.common().global_state.no_gc_in_harness.load(std::sync::atomic::Ordering::SeqCst)) {
+                                        memory::zero(res.start, bytes);
+                                    }
+                                } else {
+                                    memory::zero(res.start, bytes);
+                                }
+                            }
+                            // memory::zero(res.start, bytes);
                         }
                     }
 
