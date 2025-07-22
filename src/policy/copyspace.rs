@@ -26,7 +26,10 @@ pub struct CopySpace<VM: VMBinding> {
     common: CommonSpace<VM>,
     pr: MonotonePageResource<VM>,
     from_space: AtomicBool,
-    #[cfg(any(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"), feature = "ss_do_trace_before_gc"))]
+    #[cfg(any(
+        all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"),
+        feature = "ss_do_trace_before_gc"
+    ))]
     mark_state: MarkState,
 }
 
@@ -43,16 +46,20 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
             // the actual live object if a new chunk has been allocated behind
             // old chunks. Hence, only check against the cursor for fixed size
             // contiguous spaces.
-            #[cfg(feature = "semispace_fixed_size")]
+            #[cfg(feature = "ss_fixed_size")]
             return object.to_raw_address() < self.pr.cursor();
-            #[cfg(not(feature = "semispace_fixed_size"))]
+            #[cfg(not(feature = "ss_fixed_size"))]
             true
         } else {
             object_forwarding::is_forwarded::<VM>(object)
         }
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", not(feature = "ss_do_trace_before_gc")))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        not(feature = "ss_do_trace_before_gc")
+    ))]
     fn is_live(&self, object: ObjectReference) -> bool {
         if unlikely(self.is_simulating_nogc()) {
             // If we are simulating no GC, we always return true for is_live.
@@ -66,16 +73,20 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
             // the actual live object if a new chunk has been allocated behind
             // old chunks. Hence, only check against the cursor for fixed size
             // contiguous spaces.
-            #[cfg(feature = "semispace_fixed_size")]
+            #[cfg(feature = "ss_fixed_size")]
             return object.to_raw_address() < self.pr.cursor();
-            #[cfg(not(feature = "semispace_fixed_size"))]
+            #[cfg(not(feature = "ss_fixed_size"))]
             true
         } else {
             object_forwarding::is_forwarded::<VM>(object)
         }
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", feature = "ss_do_trace_before_gc"))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        feature = "ss_do_trace_before_gc"
+    ))]
     fn is_live(&self, object: ObjectReference) -> bool {
         if unlikely(self.is_simulating_nogc() || self.is_ss_pre_gc_trace()) {
             // If we are simulating no GC or if we are the pre-GC trace in SS,
@@ -254,7 +265,10 @@ impl<VM: VMBinding> CopySpace<VM> {
             extract_side_metadata(&[
                 *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC,
-                #[cfg(any(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"), feature = "ss_do_trace_before_gc"))]
+                #[cfg(any(
+                    all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"),
+                    feature = "ss_do_trace_before_gc"
+                ))]
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
             ]),
         ));
@@ -266,7 +280,10 @@ impl<VM: VMBinding> CopySpace<VM> {
             },
             common,
             from_space: AtomicBool::new(from_space),
-            #[cfg(any(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"), feature = "ss_do_trace_before_gc"))]
+            #[cfg(any(
+                all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"),
+                feature = "ss_do_trace_before_gc"
+            ))]
             mark_state: MarkState::new(),
         }
     }
@@ -276,7 +293,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         self.from_space.store(from_space, Ordering::SeqCst);
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", not(feature = "ss_do_trace_before_gc")))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        not(feature = "ss_do_trace_before_gc")
+    ))]
     pub fn prepare(&mut self, from_space: bool) {
         if unlikely(self.is_simulating_nogc()) {
             self.mark_state.on_global_prepare::<VM>();
@@ -294,7 +315,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         }
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", feature = "ss_do_trace_before_gc"))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        feature = "ss_do_trace_before_gc"
+    ))]
     pub fn prepare(&mut self, from_space: bool) {
         if unlikely(self.is_simulating_nogc() || self.is_ss_pre_gc_trace()) {
             self.mark_state.on_global_prepare::<VM>();
@@ -349,7 +374,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         self.__release();
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", not(feature = "ss_do_trace_before_gc")))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        not(feature = "ss_do_trace_before_gc")
+    ))]
     pub fn release(&mut self) {
         if unlikely(self.is_simulating_nogc()) {
             self.mark_state.on_global_release::<VM>();
@@ -358,7 +387,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         }
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", feature = "ss_do_trace_before_gc"))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        feature = "ss_do_trace_before_gc"
+    ))]
     pub fn release(&mut self) {
         if unlikely(self.is_simulating_nogc() || self.is_ss_pre_gc_trace()) {
             self.mark_state.on_global_release::<VM>();
@@ -369,12 +402,18 @@ impl<VM: VMBinding> CopySpace<VM> {
 
     #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
     fn is_simulating_nogc(&self) -> bool {
-        self.common().global_state.no_gc_in_harness.load(Ordering::Relaxed)
+        self.common()
+            .global_state
+            .no_gc_in_harness
+            .load(Ordering::Relaxed)
     }
 
     #[cfg(feature = "ss_do_trace_before_gc")]
     fn is_ss_pre_gc_trace(&self) -> bool {
-        self.common().global_state.ss_pre_gc_trace.load(Ordering::Relaxed)
+        self.common()
+            .global_state
+            .ss_pre_gc_trace
+            .load(Ordering::Relaxed)
     }
 
     fn is_from_space(&self) -> bool {
@@ -447,7 +486,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         }
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", not(feature = "ss_do_trace_before_gc")))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        not(feature = "ss_do_trace_before_gc")
+    ))]
     pub fn trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,
@@ -474,7 +517,11 @@ impl<VM: VMBinding> CopySpace<VM> {
         self.__trace_object(queue, object, semantics, worker)
     }
 
-    #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace", feature = "ss_do_trace_before_gc"))]
+    #[cfg(all(
+        feature = "ss_no_gc_in_harness",
+        feature = "nogc_trace",
+        feature = "ss_do_trace_before_gc"
+    ))]
     pub fn trace_object<Q: ObjectQueue>(
         &self,
         queue: &mut Q,
