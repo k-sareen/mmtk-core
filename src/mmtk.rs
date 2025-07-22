@@ -411,7 +411,6 @@ impl<VM: VMBinding> MMTK<VM> {
     /// to clear any residual garbage and start collecting statistics for the benchmark.
     /// This is usually called by the benchmark harness as its last step before the actual benchmark.
     pub fn harness_begin(&self, tls: VMMutatorThread) {
-        probe!(mmtk, harness_begin);
         self.state.is_harness_begin_gc.store(true, Ordering::SeqCst);
         self.handle_user_collection_request(tls, true, true);
         self.state.is_harness_begin_gc.store(false, Ordering::SeqCst);
@@ -437,12 +436,14 @@ impl<VM: VMBinding> MMTK<VM> {
             self.state.time_large_object_alloc_ns.swap(0, Ordering::SeqCst);
         }
         self.scheduler.enable_stat();
+        probe!(mmtk, harness_begin);
     }
 
     /// Generic hook to allow benchmarks to be harnessed. MMTk will stop collecting
     /// statistics, and print out the collected statistics in a defined format.
     /// This is usually called by the benchmark harness right after the actual benchmark.
     pub fn harness_end(&'static self) {
+        probe!(mmtk, harness_end);
         self.stats.stop_all(self);
         self.state.inside_harness.store(false, Ordering::SeqCst);
         #[cfg(feature = "ss_no_gc_in_harness")]
@@ -456,7 +457,6 @@ impl<VM: VMBinding> MMTK<VM> {
                 println!("mutator slowpath allocation took: {} ns", t);
             }
         }
-        probe!(mmtk, harness_end);
     }
 
     #[cfg(feature = "sanity")]
