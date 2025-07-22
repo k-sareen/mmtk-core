@@ -4,7 +4,6 @@ use crate::plan::{Mutator, MutatorContext};
 use crate::plan::{Plan, PlanTraceObject};
 use crate::policy::gc_work::TraceKind;
 use crate::scheduler::*;
-#[cfg(all(feature = "ss_no_gc_in_harness", feature = "ss_no_gc_fixed_cost"))]
 use crate::util::rust_util::unlikely;
 use crate::util::ObjectReference;
 use crate::vm::*;
