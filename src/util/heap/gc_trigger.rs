@@ -26,6 +26,7 @@ pub struct GCTrigger<VM: VMBinding> {
     gc_requester: Arc<GCRequester<VM>>,
     pub options: Arc<Options>,
     state: Arc<GlobalState>,
+    mmtk: MaybeUninit<&'static MMTK<VM>>,
 }
 
 impl<VM: VMBinding> GCTrigger<VM> {
@@ -60,12 +61,21 @@ impl<VM: VMBinding> GCTrigger<VM> {
             options,
             gc_requester,
             state,
+            mmtk: MaybeUninit::uninit(),
         }
     }
 
     /// Set the plan. This is called in `create_plan()` after we created a boxed plan.
     pub fn set_plan(&mut self, plan: &'static dyn Plan<VM = VM>) {
         self.plan.write(plan);
+    }
+
+    pub fn set_mmtk(&mut self, mmtk: &'static MMTK<VM>) {
+        self.mmtk.write(mmtk);
+    }
+
+    fn mmtk(&self) -> &'static MMTK<VM> {
+        unsafe { self.mmtk.assume_init() }
     }
 
     pub fn plan(&self) -> &dyn Plan<VM = VM> {
@@ -96,6 +106,7 @@ impl<VM: VMBinding> GCTrigger<VM> {
                 plan.get_reserved_pages(),
                 plan.get_total_pages(),
             );
+            self.mmtk().set_gc_status(crate::global_state::GcStatus::GcPrepare);
             self.gc_requester.request();
             return true;
         }

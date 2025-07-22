@@ -297,6 +297,12 @@ impl<VM: VMBinding> MMTK<VM> {
         if !self.is_zygote_process() {
             self.create_perf_counters();
         }
+        {
+            let gc_trigger: &mut GCTrigger<VM> =
+                unsafe { &mut *(Arc::as_ptr(&self.gc_trigger) as *mut _) };
+            // Set MMTk
+            gc_trigger.set_mmtk(self);
+        }
         self.scheduler.spawn_gc_threads(self, tls);
         self.state.initialized.store(true, Ordering::SeqCst);
         probe!(mmtk, collection_initialized);
@@ -474,7 +480,7 @@ impl<VM: VMBinding> MMTK<VM> {
         self.inside_sanity.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn set_gc_status(&self, s: GcStatus) {
+    pub fn set_gc_status(&self, s: GcStatus) {
         let mut gc_status = self.state.gc_status.lock().unwrap();
         if *gc_status == GcStatus::NotInGC {
             self.state.stacks_prepared.store(false, Ordering::SeqCst);
@@ -528,6 +534,11 @@ impl<VM: VMBinding> MMTK<VM> {
         if let Some(gen) = self.get_plan().generational() {
             gen.is_current_gc_nursery()
         } else {
+            #[cfg(all(feature = "ss_no_gc_in_harness", feature = "nogc_trace"))]
+            if self.state.no_gc_in_harness.load(Ordering::Relaxed) {
+                // Return true for NoGC in harness as a hack for avoiding reference processing in the GC
+                return true;
+            }
             false
         }
     }

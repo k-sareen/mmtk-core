@@ -45,7 +45,7 @@ pub use mmtk::MMTKBuilder;
 pub(crate) use mmtk::MMAPPER;
 pub use mmtk::MMTK;
 
-mod global_state;
+pub mod global_state;
 pub use crate::global_state::LiveBytesStats;
 
 mod policy;

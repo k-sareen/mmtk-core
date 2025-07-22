@@ -629,7 +629,7 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
         }
 
         // Set to NotInGC after everything, and right before resuming mutators.
-        mmtk.set_gc_status(GcStatus::NotInGC);
+        // mmtk.set_gc_status(GcStatus::NotInGC);
         <VM as VMBinding>::VMCollection::resume_mutators(worker.tls);
     }
 
