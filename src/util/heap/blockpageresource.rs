@@ -126,25 +126,9 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
         assert!(start.is_aligned_to(BYTES_IN_CHUNK));
         // 2. Take the first block int the chunk as the allocation result
         let first_block = start;
-        // 3. Push all remaining blocks to one or more block lists
-        let last_block = start + BYTES_IN_CHUNK;
-        let mut array = BlockQueue::new();
-        let mut cursor = start + B::BYTES;
-        while cursor < last_block {
-            let result = unsafe { array.push_relaxed(B::from_aligned_address(cursor)) };
-            if let Err(block) = result {
-                self.block_queue.add_global_array(array);
-                array = BlockQueue::new();
-                let result2 = unsafe { array.push_relaxed(block) };
-                debug_assert!(result2.is_ok());
-            }
-            cursor += B::BYTES;
-        }
-        debug_assert!(!array.is_empty());
-        // 4. Push the block list to the global pool
-        self.block_queue.add_global_array(array);
-        // Finish slow-allocation
-        self.commit_pages(reserved_pages, required_pages, tls);
+        // 3. Mmap space and metadata. Need to do this before we push the first block
+        // to the block queue since other threads may try to allocate blocks from the
+        // block queue before the mmap/SFT update is done.
         let mmap_closure = |start: Address, num_chunks: usize| {
             use crate::util::constants::LOG_BYTES_IN_PAGE;
             use crate::util::heap::layout::vm_layout::LOG_BYTES_IN_CHUNK;
@@ -181,7 +165,27 @@ impl<VM: VMBinding, B: Region> BlockPageResource<VM, B> {
             }
         };
         mmap_closure(first_block, /* num_chunks= */ 1);
+        // 4. Update the SFT
         space.grow_space(first_block, 1 << LOG_BYTES_IN_CHUNK, true);
+        // 5. Push all remaining blocks to one or more block lists
+        let last_block = start + BYTES_IN_CHUNK;
+        let mut array = BlockQueue::new();
+        let mut cursor = start + B::BYTES;
+        while cursor < last_block {
+            let result = unsafe { array.push_relaxed(B::from_aligned_address(cursor)) };
+            if let Err(block) = result {
+                self.block_queue.add_global_array(array);
+                array = BlockQueue::new();
+                let result2 = unsafe { array.push_relaxed(block) };
+                debug_assert!(result2.is_ok());
+            }
+            cursor += B::BYTES;
+        }
+        debug_assert!(!array.is_empty());
+        // 6. Push the block list to the global pool
+        self.block_queue.add_global_array(array);
+        // Finish slow-allocation
+        self.commit_pages(reserved_pages, required_pages, tls);
         Result::Ok(PRAllocResult {
             start: first_block,
             pages: required_pages,
