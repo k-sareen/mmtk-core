@@ -441,6 +441,28 @@ impl<VM: VMBinding> MMTK<VM> {
                     .zero_until_end();
             }
         }
+        // If we are an application process
+        #[cfg(feature = "app_process_set_stress_factor")]
+        if self.state.has_zygote_space() {
+            // Unsafely set stress_factor in the options to value specified in /data/local/mmtk_stress_factor
+            //
+            // # Safety: This is safe because we are the only ones who access the options during
+            // harness begin
+            unsafe {
+                // TODO: use Arc::get_mut_unchecked() when it is available.
+                let options: &mut Options = &mut *(Arc::as_ptr(&self.options) as *mut _);
+                if let Ok(stress_factor) = std::fs::read_to_string("/data/local/mmtk_stress_factor") {
+                    if let Ok(value) = stress_factor.trim().parse::<usize>() {
+                        options.stress_factor.set(value);
+                        options.precise_stress.set(false);
+                    } else {
+                        warn!("Invalid value in /data/local/mmtk_stress_factor. Not setting stress_factor");
+                    }
+                } else {
+                    warn!("Could not read /data/local/mmtk_stress_factor. Not setting stress_factor");
+                }
+            }
+        }
         self.stats.start_all();
         #[cfg(feature = "measure_large_object_alloc")]
         {
