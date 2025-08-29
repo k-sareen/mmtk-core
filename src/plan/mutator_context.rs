@@ -6,7 +6,6 @@ use crate::plan::AllocationSemantics;
 use crate::policy::space::Space;
 use crate::util::alloc::allocators::{AllocatorSelector, Allocators};
 use crate::util::alloc::Allocator;
-use crate::util::options::PlanSelector;
 use crate::util::{Address, ObjectReference};
 use crate::util::{VMMutatorThread, VMWorkerThread};
 use crate::vm::VMBinding;
@@ -159,16 +158,6 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
         offset: usize,
         allocator: AllocationSemantics,
     ) -> Address {
-        let is_ref_los = allocator == AllocationSemantics::LargeCode;
-        let allocator = if is_ref_los {
-            if *self.plan.options().plan == PlanSelector::SemiSpace {
-                AllocationSemantics::Default
-            } else {
-                AllocationSemantics::Los
-            }
-        } else {
-            allocator
-        };
         unsafe {
             self.allocators
                 .get_allocator_mut(self.config.allocator_mapping[allocator])
@@ -183,16 +172,6 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
         offset: usize,
         allocator: AllocationSemantics,
     ) -> Address {
-        let is_ref_los = allocator == AllocationSemantics::LargeCode;
-        let allocator = if is_ref_los {
-            if *self.plan.options().plan == PlanSelector::SemiSpace {
-                AllocationSemantics::Default
-            } else {
-                AllocationSemantics::Los
-            }
-        } else {
-            allocator
-        };
         unsafe {
             self.allocators
                 .get_allocator_mut(self.config.allocator_mapping[allocator])
@@ -207,16 +186,6 @@ impl<VM: VMBinding> MutatorContext<VM> for Mutator<VM> {
         _bytes: usize,
         allocator: AllocationSemantics,
     ) {
-        let is_ref_los = allocator == AllocationSemantics::LargeCode;
-        let allocator = if is_ref_los {
-            if *self.plan.options().plan == PlanSelector::SemiSpace {
-                AllocationSemantics::Default
-            } else {
-                AllocationSemantics::Los
-            }
-        } else {
-            allocator
-        };
         unsafe {
             self.allocators
                 .get_allocator_mut(self.config.allocator_mapping[allocator])
@@ -484,6 +453,7 @@ pub(crate) fn create_allocator_mapping(
         reserved.n_bump_pointer += 1;
 
         map[AllocationSemantics::Los] = AllocatorSelector::LargeObject(reserved.n_large_object);
+        map[AllocationSemantics::PrimitiveLos] = AllocatorSelector::LargeObject(reserved.n_large_object);
         reserved.n_large_object += 1;
 
         // TODO: This should be freelist allocator once we use marksweep for nonmoving space.

@@ -34,6 +34,7 @@ lazy_static! {
             map[AllocationSemantics::Default] = AllocatorSelector::BumpPointer(0);
             map[AllocationSemantics::Immortal] = AllocatorSelector::BumpPointer(1);
             map[AllocationSemantics::Los] = AllocatorSelector::BumpPointer(2);
+            map[AllocationSemantics::PrimitiveLos] = AllocatorSelector::BumpPointer(2);
             map
         } else {
             *ALLOCATOR_MAPPING_SINGLE_SPACE
