@@ -89,6 +89,12 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>> BarrierSem
         _slot: VM::VMSlot,
         _target: Option<ObjectReference>,
     ) {
+        debug_assert!(
+            !self.plan.is_object_in_nursery(src),
+            "Object should not be in nursery space: {:?}. Dumping process maps:\n{}",
+            src,
+            crate::util::memory::get_process_memory_maps(),
+        );
         // enqueue the object
         self.modbuf.push(src);
         self.modbuf.is_full().then(|| self.flush_modbuf());
@@ -116,6 +122,12 @@ impl<VM: VMBinding, P: GenerationalPlanExt<VM> + PlanTraceObject<VM>> BarrierSem
     }
 
     fn object_probable_write_slow(&mut self, obj: ObjectReference) {
+        debug_assert!(
+            !self.plan.is_object_in_nursery(obj),
+            "Object should not be in nursery space: {:?}. Dumping process maps:\n{}",
+            obj,
+            crate::util::memory::get_process_memory_maps(),
+        );
         // enqueue the object
         self.modbuf.push(obj);
         self.modbuf.is_full().then(|| self.flush_modbuf());
