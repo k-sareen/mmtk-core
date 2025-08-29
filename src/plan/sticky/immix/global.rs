@@ -184,8 +184,8 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
 
     fn release(&mut self, worker: &mut GCWorker<VM>) {
         if self.is_current_gc_nursery() {
-            self.immix.immix_space.release(worker, false);
             self.immix.common.los.release(false);
+            self.immix.immix_space.release(worker, false);
             #[cfg(feature = "single_worker")]
             {
                 debug_assert!(
