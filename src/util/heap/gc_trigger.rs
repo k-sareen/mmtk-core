@@ -121,7 +121,7 @@ impl<VM: VMBinding> GCTrigger<VM> {
     /// the stress factor, we should do a stress GC.
     pub(crate) fn should_do_stress_gc_inner(state: &GlobalState, options: &Options) -> bool {
         state.is_initialized()
-            && state.inside_harness.load(Ordering::SeqCst)
+            && (!cfg!(feature = "stress_gc_in_harness") || state.inside_harness.load(Ordering::SeqCst))
             && (state.allocation_bytes.load(Ordering::SeqCst) > *options.stress_factor)
     }
 
