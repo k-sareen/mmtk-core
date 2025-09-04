@@ -122,8 +122,12 @@ lazy_static! {
 
 #[cfg(feature = "ss_no_gc_in_harness")]
 lazy_static! {
-    static ref ALLOCATOR_MAPPING_SINGLE_SPACE: EnumMap<AllocationSemantics, AllocatorSelector> = enum_map! {
-        _ => AllocatorSelector::BumpPointer(0),
+    static ref ALLOCATOR_MAPPING_SINGLE_SPACE: EnumMap<AllocationSemantics, AllocatorSelector> = {
+        let mut map = create_allocator_mapping(RESERVED_ALLOCATORS, true);
+        map[AllocationSemantics::Default] = AllocatorSelector::BumpPointer(0);
+        map[AllocationSemantics::Los] = AllocatorSelector::BumpPointer(0);
+        map[AllocationSemantics::PrimitiveLos] = AllocatorSelector::BumpPointer(0);
+        map
     };
 }
 
