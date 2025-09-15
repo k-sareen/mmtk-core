@@ -1,7 +1,14 @@
 use super::worker::ThreadId;
 use crate::util::options::AffinityKind;
 #[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::util::rust_util::InitializeOnce;
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use libc::{cpu_set_t, sched_getaffinity, sched_setaffinity, CPU_COUNT, CPU_SET, CPU_ZERO};
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) static MID_CORE_AFFINITY: InitializeOnce<AffinityKind> = InitializeOnce::new();
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) static BIG_CORE_AFFINITY: InitializeOnce<AffinityKind> = InitializeOnce::new();
 
 /// Represents the ID of a logical CPU on a system.
 pub type CoreId = u16;

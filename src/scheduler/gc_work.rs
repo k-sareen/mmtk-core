@@ -106,6 +106,23 @@ pub struct PrepareCollector;
 impl<VM: VMBinding> GCWork<VM> for PrepareCollector {
     fn do_work(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
         trace!("Prepare Collector");
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if unlikely(mmtk.has_zygote_space()
+            && mmtk.state.is_harness_begin_gc.load(std::sync::atomic::Ordering::Relaxed))
+        {
+            use crate::scheduler::affinity::{BIG_CORE_AFFINITY, MID_CORE_AFFINITY};
+            if let Ok(thread_affinity) = std::fs::read_to_string("/data/local/mmtk_thread_affinity") {
+                if thread_affinity.trim() == "big" {
+                    BIG_CORE_AFFINITY.get_ref().resolve_affinity(worker.ordinal);
+                } else if thread_affinity.trim() == "mid" {
+                    MID_CORE_AFFINITY.get_ref().resolve_affinity(worker.ordinal);
+                } else {
+                    warn!("Invalid value in /data/local/mmtk_thread_affinity. Not setting affinity");
+                }
+            } else {
+                warn!("Could not read /data/local/mmtk_thread_affinity. Not setting affinity");
+            }
+        }
         worker.get_copy_context_mut().prepare();
         mmtk.get_plan().prepare_worker(worker);
     }

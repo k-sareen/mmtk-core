@@ -11,6 +11,8 @@ use crate::global_state::GcStatus;
 use crate::mmtk::MMTK;
 use crate::policy::gc_work::TraceKind;
 use crate::policy::vmspace::ProcessVmSpaceObjects;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::scheduler::affinity::{BIG_CORE_AFFINITY, MID_CORE_AFFINITY};
 use crate::util::opaque_pointer::*;
 use crate::util::options::AffinityKind;
 use crate::util::rust_util::array_from_fn;
@@ -41,6 +43,11 @@ unsafe impl<VM: VMBinding> Sync for GCWorkScheduler<VM> {}
 
 impl<VM: VMBinding> GCWorkScheduler<VM> {
     pub fn new(num_workers: usize, affinity: AffinityKind) -> Arc<Self> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            MID_CORE_AFFINITY.initialize_once(&|| { AffinityKind::AllInSet(vec![4_u16, 5_u16]) });
+            BIG_CORE_AFFINITY.initialize_once(&|| { AffinityKind::AllInSet(vec![6_u16, 7_u16]) });
+        }
         let worker_monitor: Arc<WorkerMonitor> = Arc::new(WorkerMonitor::new(num_workers));
         let worker_group = WorkerGroup::new(num_workers);
 
