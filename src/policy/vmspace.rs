@@ -250,7 +250,22 @@ impl<VM: VMBinding> VMSpace<VM> {
 
         // Mark VM space as unmapped. Note that we don't unmap the metadata since it may be used by other spaces,
         // for example global metadata like the chunk mark metadata.
-        self.common.mmapper.mark_as_unmapped(chunk_start, chunk_size);
+        let mut can_unmap_region = true;
+        for region in self.pr.get_external_pages().iter() {
+            // If the chunk we are trying to unmap intersects with any other region, we cannot unmap it
+            let region_chunk_start = region.start.align_down(BYTES_IN_CHUNK);
+            let region_chunk_end = region.end.align_up(BYTES_IN_CHUNK);
+            if !Address::range_intersection(&(chunk_start..chunk_end), &(region_chunk_start..region_chunk_end))
+                .is_empty()
+            {
+                can_unmap_region = false;
+                break;
+            }
+        }
+
+        if can_unmap_region {
+            self.common.mmapper.mark_as_unmapped(chunk_start, chunk_size);
+        }
 
         assert!(
             SFT_MAP.has_sft_entry(chunk_start),
@@ -264,8 +279,10 @@ impl<VM: VMBinding> VMSpace<VM> {
         );
 
         // Clear the SFT entry for the removed region
-        unsafe {
-            SFT_MAP.clear(chunk_start);
+        if can_unmap_region {
+            unsafe {
+                SFT_MAP.clear(chunk_start);
+            }
         }
 
         // Reset the initialized flag, so that we re-initialize the object cache
