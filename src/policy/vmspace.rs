@@ -35,6 +35,7 @@ pub struct VMSpace<VM: VMBinding> {
     mark_state: MarkState,
     common: CommonSpace<VM>,
     pr: ExternalPageResource<VM>,
+    ranges: Vec<ExternalPages>,
 }
 
 impl<VM: VMBinding> SFT for VMSpace<VM> {
@@ -154,7 +155,7 @@ impl<VM: VMBinding> Space<VM> for VMSpace<VM> {
     }
 
     fn address_in_space(&self, start: Address) -> bool {
-        self.pr.get_external_pages().iter().any(|region| {
+        self.ranges.iter().any(|region| {
             region.start <= start && start < region.end
         })
     }
@@ -198,6 +199,7 @@ impl<VM: VMBinding> VMSpace<VM> {
                 true,
                 vec![],
             )),
+            ranges: vec![],
         };
 
         if !vm_space_start.is_zero() {
@@ -210,6 +212,12 @@ impl<VM: VMBinding> VMSpace<VM> {
 
     pub fn set_vm_region(&mut self, start: Address, size: usize) {
         self.set_vm_region_inner(start, size, true);
+
+        self.ranges.push(ExternalPages {
+            start: start.align_down(BYTES_IN_PAGE),
+            end: (start + size).align_up(BYTES_IN_PAGE),
+        });
+
         // Reset the initialized flag, so that we re-initialize the object cache
         self.initialized = false;
     }
@@ -235,6 +243,10 @@ impl<VM: VMBinding> VMSpace<VM> {
             warn!("Failed to remove external pages ({}, {}) at chunks ({}, {})", start, end, chunk_start, chunk_end);
             return;
         }
+
+        // We've checked that the region exists in `remove_external_pages`
+        let index = self.ranges.iter().position(|&p| p.start == start && p.end == end).unwrap();
+        self.ranges.remove(index);
 
         // Mark VM space as unmapped. Note that we don't unmap the metadata since it may be used by other spaces,
         // for example global metadata like the chunk mark metadata.
