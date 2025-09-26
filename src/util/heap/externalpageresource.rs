@@ -11,14 +11,14 @@ use crate::util::opaque_pointer::*;
 use crate::vm::VMBinding;
 
 use std::marker::PhantomData;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 
 /// A special page resource that records some external pages that are not mmapped by us,
 /// but are used by our space (namely VM space). Unlike other page resources, we cannot
 /// allocate from this page resource.
 pub struct ExternalPageResource<VM: VMBinding> {
     common: CommonPageResource,
-    ranges: Mutex<Vec<ExternalPages>>,
+    ranges: RwLock<Vec<ExternalPages>>,
     _p: PhantomData<VM>,
 }
 
@@ -63,22 +63,43 @@ impl<VM: VMBinding> ExternalPageResource<VM> {
     pub fn new(vm_map: &'static dyn VMMap) -> Self {
         Self {
             common: CommonPageResource::new(false, false, vm_map),
-            ranges: Mutex::new(vec![]),
+            ranges: RwLock::new(vec![]),
             _p: PhantomData,
         }
     }
 
-    pub fn add_new_external_pages(&self, pages: ExternalPages) {
+    pub fn add_external_pages(&self, pages: ExternalPages) {
         assert!(pages.start.is_aligned_to(BYTES_IN_PAGE));
         assert!(pages.end.is_aligned_to(BYTES_IN_PAGE));
 
-        let mut lock = self.ranges.lock().unwrap();
+        let mut lock = self.ranges.write().unwrap();
         let n_pages = (pages.end - pages.start) >> LOG_BYTES_IN_PAGE;
         self.common.accounting.reserve_and_commit(n_pages);
         lock.push(pages);
     }
 
-    pub fn get_external_pages(&self) -> MutexGuard<Vec<ExternalPages>> {
-        self.ranges.lock().unwrap()
+    /// Remove the record of external pages. This does not unmap the pages, as they are not
+    /// mapped by us. Returns true if the record is found and removed, false otherwise.
+    pub fn remove_external_pages(&self, pages: ExternalPages) -> bool {
+        assert!(pages.start.is_aligned_to(BYTES_IN_PAGE));
+        assert!(pages.end.is_aligned_to(BYTES_IN_PAGE));
+
+        let mut lock = self.ranges.write().unwrap();
+        let n_pages = (pages.end - pages.start) >> LOG_BYTES_IN_PAGE;
+        self.common.accounting.release(n_pages);
+        let index = lock
+            .iter()
+            .position(|&p| p.start == pages.start && p.end == pages.end);
+        if let Some(idx) = index {
+            lock.remove(idx);
+            true
+        } else {
+            warn!("Failed in trying to remove external pages: {:?}", pages);
+            false
+        }
+    }
+
+    pub fn get_external_pages(&self) -> RwLockReadGuard<Vec<ExternalPages>> {
+        self.ranges.read().unwrap()
     }
 }

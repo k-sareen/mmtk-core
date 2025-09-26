@@ -37,11 +37,11 @@ impl Mmapper for ByteMapMmapper {
         unimplemented!()
     }
 
-    fn mark_as_mapped(&self, start: Address, bytes: usize) {
+    fn mark_as_state(&self, start: Address, bytes: usize, state: MapState) {
         let start_chunk = Self::address_to_mmap_chunks_down(start);
         let end_chunk = Self::address_to_mmap_chunks_up(start + bytes) - 1;
         for i in start_chunk..=end_chunk {
-            self.mapped[i].store(MapState::Mapped, Ordering::Relaxed);
+            self.mapped[i].store(state, Ordering::Relaxed);
         }
     }
 

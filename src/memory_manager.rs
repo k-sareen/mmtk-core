@@ -70,13 +70,24 @@ pub fn mmtk_init<VM: VMBinding>(builder: &MMTKBuilder) -> Box<MMTK<VM>> {
 /// Add an externally mmapped region to the VM space. A VM space can be set through MMTk options (`vm_space_start` and `vm_space_size`),
 /// and can also be set through this function call. A VM space can be discontiguous. This function can be called multiple times,
 /// and all the address ranges passed as arguments in the function will be considered as part of the VM space.
-/// Currently we do not allow removing regions from VM space.
 #[cfg(feature = "vm_space")]
 pub fn set_vm_space<VM: VMBinding>(mmtk: &'static mut MMTK<VM>, start: Address, size: usize) {
     unsafe { mmtk.get_plan_mut() }
         .base_mut()
         .vm_space
         .set_vm_region(start, size);
+}
+
+/// Remove an externally mmapped region from the VM space. Note that users of the function should make sure that the region
+/// addresses provided are *exactly* the same as those used in [`set_vm_space`]. This function can be called multiple times
+/// to remove multiple regions. If the user does not provide the same address range as used in [`set_vm_space`], this function
+/// will not do anything.
+#[cfg(feature = "vm_space")]
+pub fn remove_vm_space<VM: VMBinding>(mmtk: &'static mut MMTK<VM>, start: Address, size: usize) {
+    unsafe { mmtk.get_plan_mut() }
+        .base_mut()
+        .vm_space
+        .remove_vm_region(start, size);
 }
 
 /// Request MMTk to create a mutator for the given thread. The ownership

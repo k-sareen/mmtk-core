@@ -1,9 +1,9 @@
 use crate::mmtk::SFT_MAP;
 use crate::plan::{ObjectQueue, VectorObjectQueue};
-use crate::policy::sft::GCWorkerMutRef;
+use crate::policy::sft::{GCWorkerMutRef, EmptySpaceSFT, EMPTY_SPACE_SFT};
 use crate::policy::sft::SFT;
 use crate::policy::space::{CommonSpace, Space};
-use crate::scheduler::{self, gc_work::*, GCWork, GCWorkScheduler, GCWorker, WorkBucketStage};
+use crate::scheduler::{self, gc_work::*, GCWork, GCWorker, WorkBucketStage};
 use crate::util::address::Address;
 use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::heap::externalpageresource::{ExternalPageResource, ExternalPages};
@@ -35,9 +35,6 @@ pub struct VMSpace<VM: VMBinding> {
     mark_state: MarkState,
     common: CommonSpace<VM>,
     pr: ExternalPageResource<VM>,
-    scheduler: Arc<GCWorkScheduler<VM>>,
-    start: Address,
-    size: usize,
 }
 
 impl<VM: VMBinding> SFT for VMSpace<VM> {
@@ -137,7 +134,11 @@ impl<VM: VMBinding> Space<VM> for VMSpace<VM> {
                 crate::policy::sft::EMPTY_SFT_NAME
             );
             // Set SFT
-            assert!(sft_map.has_sft_entry(start), "The VM space start (aligned to {}) does not have a valid SFT entry. Possibly the address range is not in the address range we use.", start);
+            assert!(
+                sft_map.has_sft_entry(start),
+                "The VM space start (aligned to {}) does not have a valid SFT entry. Possibly the address range is not in the address range we use.",
+                start,
+            );
             unsafe {
                 sft_map.eager_initialize(self.as_sft(), start, size);
             }
@@ -153,7 +154,9 @@ impl<VM: VMBinding> Space<VM> for VMSpace<VM> {
     }
 
     fn address_in_space(&self, start: Address) -> bool {
-        self.start <= start && start < self.start + self.size
+        self.pr.get_external_pages().iter().any(|region| {
+            region.start <= start && start < region.end
+        })
     }
 
     fn enumerate_objects(&self, enumerator: &mut dyn ObjectEnumerator) {
@@ -185,7 +188,6 @@ impl<VM: VMBinding> VMSpace<VM> {
     pub fn new(args: crate::policy::space::PlanCreateSpaceArgs<VM>) -> Self {
         let (vm_space_start, vm_space_size) =
             (*args.options.vm_space_start, *args.options.vm_space_size);
-        let scheduler = args.scheduler.clone();
         let space = Self {
             initialized: false,
             object_cache: vec![],
@@ -196,9 +198,6 @@ impl<VM: VMBinding> VMSpace<VM> {
                 true,
                 vec![],
             )),
-            scheduler,
-            start: vm_space_start,
-            size: vm_space_size,
         };
 
         if !vm_space_start.is_zero() {
@@ -211,12 +210,59 @@ impl<VM: VMBinding> VMSpace<VM> {
 
     pub fn set_vm_region(&mut self, start: Address, size: usize) {
         self.set_vm_region_inner(start, size, true);
-        self.start = start;
-        self.size = size;
+        // Reset the initialized flag, so that we re-initialize the object cache
+        self.initialized = false;
     }
 
-    pub fn scheduler(&self) -> &GCWorkScheduler<VM> {
-        &self.scheduler
+    pub fn remove_vm_region(&mut self, start: Address, size: usize) {
+        assert!(size > 0);
+        assert!(!start.is_zero());
+
+        let end = start + size;
+        let chunk_start = start.align_down(BYTES_IN_CHUNK);
+        let chunk_end = end.align_up(BYTES_IN_CHUNK);
+        let chunk_size = chunk_end - chunk_start;
+
+        debug!(
+            "Removing VM space ({}, {}) chunk ({}, {})",
+            start, end, chunk_start, chunk_end
+        );
+
+        if !self.pr.remove_external_pages(ExternalPages {
+            start: start.align_down(BYTES_IN_PAGE),
+            end: end.align_up(BYTES_IN_PAGE),
+        }) {
+            warn!("Failed to remove external pages ({}, {}) at chunks ({}, {})", start, end, chunk_start, chunk_end);
+            return;
+        }
+
+        // Mark VM space as unmapped. Note that we don't unmap the metadata since it may be used by other spaces,
+        // for example global metadata like the chunk mark metadata.
+        self.common.mmapper.mark_as_unmapped(chunk_start, chunk_size);
+
+        assert!(
+            SFT_MAP.has_sft_entry(chunk_start),
+            "The VM space start (aligned to {}) does not have a valid SFT entry. Possibly the address range is not in the address range we use.",
+            chunk_start,
+        );
+        assert!(
+            SFT_MAP.get_checked(chunk_start).name() == self.name(),
+            "The VM space region ({}, {}) to be cleared does not belong to us: {}",
+            chunk_start, chunk_end, SFT_MAP.get_checked(chunk_start).name(),
+        );
+
+        // Clear the SFT entry for the removed region
+        unsafe {
+            SFT_MAP.clear(chunk_start);
+        }
+
+        // Reset the initialized flag, so that we re-initialize the object cache
+        self.initialized = false;
+
+        debug!(
+            "Removed VM space ({}, {}) from chunk ({}, {})",
+            start, end, chunk_start, chunk_end
+        );
     }
 
     fn set_vm_region_inner(&self, start: Address, size: usize, set_sft: bool) {
@@ -238,7 +284,7 @@ impl<VM: VMBinding> VMSpace<VM> {
         .is_empty());
 
         debug!(
-            "Align VM space ({}, {}) to chunk ({}, {})",
+            "Adding VM space ({}, {}) chunk ({}, {})",
             start, end, chunk_start, chunk_end
         );
 
@@ -251,15 +297,25 @@ impl<VM: VMBinding> VMSpace<VM> {
             .unwrap();
         // Insert to vm map: it would be good if we can make VM map aware of the region. However, the region may be outside what we can map in our VM map implementation.
         // self.common.vm_map.insert(chunk_start, chunk_size, self.common.descriptor);
+
         // Set SFT if we should
         if set_sft {
-            assert!(SFT_MAP.has_sft_entry(chunk_start), "The VM space start (aligned to {}) does not have a valid SFT entry. Possibly the address range is not in the address range we use.", chunk_start);
+            assert!(
+                SFT_MAP.has_sft_entry(chunk_start),
+                "The VM space start (aligned to {}) does not have a valid SFT entry. Possibly the address range is not in the address range we use.",
+                chunk_start,
+            );
+            assert!(
+                SFT_MAP.get_checked(chunk_start).name() == crate::policy::sft::EMPTY_SFT_NAME || SFT_MAP.get_checked(chunk_start).name() == self.get_name(),
+                "The VM space region ({}, {}) to be set already has a non-empty SFT: {}",
+                chunk_start, chunk_end, SFT_MAP.get_checked(chunk_start).name(),
+            );
             unsafe {
                 SFT_MAP.update(self.as_sft(), chunk_start, chunk_size);
             }
         }
 
-        self.pr.add_new_external_pages(ExternalPages {
+        self.pr.add_external_pages(ExternalPages {
             start: start.align_down(BYTES_IN_PAGE),
             end: end.align_up(BYTES_IN_PAGE),
         });
@@ -272,6 +328,15 @@ impl<VM: VMBinding> VMSpace<VM> {
                 side.bset_metadata(start, size);
             }
         }
+
+        debug!(
+            "Dumping process maps after adding VM space ({}, {}) chunks ({}, {})\n{}",
+            start,
+            end,
+            chunk_start,
+            chunk_end,
+            crate::util::memory::get_process_memory_maps(),
+        );
     }
 
     pub fn prepare(&mut self, major_gc: bool) {
@@ -281,9 +346,11 @@ impl<VM: VMBinding> VMSpace<VM> {
                 // we don't trace and hence mark objects as unlogged anymore. This might be a bit
                 // inefficient. We could potentially set the bits for objects by checking in the
                 // ProcessVmSpaceObjects work packet.
-                if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
-                    side.bset_metadata(self.start, self.size);
-                }
+                self.pr.get_external_pages().iter().for_each(|region| {
+                    if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::GLOBAL_LOG_BIT_SPEC {
+                        side.bset_metadata(region.start, region.end - region.start);
+                    }
+                });
             }
         }
     }

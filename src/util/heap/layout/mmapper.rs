@@ -23,7 +23,29 @@ pub trait Mmapper: Sync {
     /// Arguments:
     /// * `start`: Address of the first page to be mapped
     /// * `bytes`: Number of bytes to ensure mapped
-    fn mark_as_mapped(&self, start: Address, bytes: usize);
+    fn mark_as_mapped(&self, start: Address, bytes: usize) {
+        self.mark_as_state(start, bytes, MapState::Mapped)
+    }
+
+    /// Mark a number of pages as unmapped, without making any
+    /// request to the operating system.  Used to mark pages
+    /// that the VM has already unmapped.
+    ///
+    /// Arguments:
+    /// * `start`: Address of the first page to be unmapped
+    /// * `bytes`: Number of bytes to ensure unmapped
+    fn mark_as_unmapped(&self, start: Address, bytes: usize) {
+        self.mark_as_state(start, bytes, MapState::Unmapped)
+    }
+
+    /// Mark a number of pages as the given state, without making
+    /// any request to the operating system.  Used to mark pages
+    /// that the VM has already mapped.
+    ///
+    /// Arguments:
+    /// * `start`: Address of the first page to be transitioned
+    /// * `bytes`: Number of bytes to ensure in the given state
+    fn mark_as_state(&self, start: Address, bytes: usize, state: MapState);
 
     /// Quarantine/reserve address range. We mmap from the OS with no reserve and with PROT_NONE,
     /// which should be little overhead. This ensures that we can reserve certain address range that

@@ -68,7 +68,7 @@ impl fmt::Debug for FragmentedMapper {
 impl Mmapper for FragmentedMapper {
     fn eagerly_mmap_all_spaces(&self, _space_map: &[Address]) {}
 
-    fn mark_as_mapped(&self, mut start: Address, bytes: usize) {
+    fn mark_as_state(&self, mut start: Address, bytes: usize, state: MapState) {
         let end = start + bytes;
         // Iterate over the slabs covered
         while start < end {
@@ -83,7 +83,7 @@ impl Mmapper for FragmentedMapper {
 
             let mapped = self.get_or_allocate_slab_table(start);
             for entry in mapped.iter().take(end_chunk).skip(start_chunk) {
-                entry.store(MapState::Mapped, Ordering::Relaxed);
+                entry.store(state, Ordering::Relaxed);
             }
             start = high;
         }
