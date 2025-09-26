@@ -304,6 +304,24 @@ impl<VM: VMBinding> VMSpace<VM> {
         debug_assert!(self.in_space(object));
         object
     }
+
+    /// Initialize the object cache by scanning the VM space for objects. The VM space must
+    /// not be initialized before this call. If we need to re-initialize the VM space (for
+    /// example, if we have to add an application image at run-time), we have to unset the
+    /// `initialized` field and then call this function again.
+    pub fn initialize_object_cache(&mut self, tls: VMWorkerThread) {
+        use crate::vm::Scanning;
+
+        assert!(!self.initialized);
+        // Clear the object cache in case we have to re-initialize the VM space
+        // For example, if we have to add an application image at run-time
+        self.object_cache.clear();
+        let mut push_closure = |objects: Vec<ObjectReference>| {
+            self.object_cache.extend(objects)
+        };
+        <VM as VMBinding>::VMScanning::scan_vm_space_objects(tls, push_closure);
+        self.initialized = true;
+    }
 }
 
 pub struct ProcessVmSpaceObjects<E: ProcessEdgesWork> {
@@ -320,14 +338,22 @@ impl<E: ProcessEdgesWork> ProcessVmSpaceObjects<E> {
 
 impl<E: ProcessEdgesWork> GCWork<E::VM> for ProcessVmSpaceObjects<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
-        use crate::vm::Scanning;
-
         let tls = worker.tls;
-        let mut closure = |objects: Vec<ObjectReference>| {
-            let mut work_packet = ScanObjects::<E>::new(objects, false, WorkBucketStage::Closure);
-            worker.add_work(WorkBucketStage::Closure, work_packet);
+        // SAFETY: There is only one work packet of this type in the prepare stage
+        let mut vm_space = &mut unsafe { mmtk.get_plan_mut() }.base_mut().vm_space;
+        let mut scan_closure = |objects: &Vec<ObjectReference>| {
+            // If there are too many objects, split them into multiple work packets
+            let chunk_size = crate::scheduler::EDGES_WORK_BUFFER_SIZE;
+            for chunk in objects.chunks(chunk_size) {
+                let mut work_packet =
+                    ScanObjects::<E>::new(chunk.to_vec(), false, WorkBucketStage::Closure);
+                worker.add_work(WorkBucketStage::Closure, work_packet);
+            }
+            return;
         };
-
-        <E::VM as VMBinding>::VMScanning::scan_vm_space_objects(tls, closure);
+        if crate::util::rust_util::unlikely(!vm_space.initialized) {
+            vm_space.initialize_object_cache(tls);
+        }
+        scan_closure(&vm_space.object_cache);
     }
 }

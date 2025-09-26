@@ -666,14 +666,7 @@ where
         // SAFETY: We are the only GC thread
         let mut vm_space = &mut unsafe { mmtk.get_plan_mut() }.base_mut().vm_space;
         if crate::util::rust_util::unlikely(!vm_space.initialized) {
-            // Clear the object cache in case we have to re-initialize the VM space
-            // For example, if we have to add an application image at run-time
-            vm_space.object_cache.clear();
-            let mut push_closure = |objects: Vec<ObjectReference>| {
-                vm_space.object_cache.extend(objects)
-            };
-            <VM as VMBinding>::VMScanning::scan_vm_space_objects(worker.tls, push_closure);
-            vm_space.initialized = true;
+            vm_space.initialize_object_cache(worker.tls);
         }
         scan_closure(&vm_space.object_cache);
         probe!(mmtk, scan_vm_space_objects_end);
