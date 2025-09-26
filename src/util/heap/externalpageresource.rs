@@ -85,13 +85,13 @@ impl<VM: VMBinding> ExternalPageResource<VM> {
         assert!(pages.end.is_aligned_to(BYTES_IN_PAGE));
 
         let mut lock = self.ranges.write().unwrap();
-        let n_pages = (pages.end - pages.start) >> LOG_BYTES_IN_PAGE;
-        self.common.accounting.release(n_pages);
         let index = lock
             .iter()
             .position(|&p| p.start == pages.start && p.end == pages.end);
         if let Some(idx) = index {
             lock.remove(idx);
+            let n_pages = (pages.end - pages.start) >> LOG_BYTES_IN_PAGE;
+            self.common.accounting.release(n_pages);
             true
         } else {
             warn!("Failed in trying to remove external pages: {:?}", pages);
