@@ -87,7 +87,7 @@ impl<VM: VMBinding> ExternalPageResource<VM> {
         let mut lock = self.ranges.write().unwrap();
         let index = lock
             .iter()
-            .position(|&p| p.start == pages.start && p.end == pages.end);
+            .position(|&p| p == pages);
         if let Some(idx) = index {
             lock.remove(idx);
             let n_pages = (pages.end - pages.start) >> LOG_BYTES_IN_PAGE;
