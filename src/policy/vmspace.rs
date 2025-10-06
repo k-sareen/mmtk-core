@@ -227,6 +227,10 @@ impl<VM: VMBinding> VMSpace<VM> {
         assert!(!start.is_zero());
 
         let end = start + size;
+        let extern_page = ExternalPages {
+            start: start.align_down(BYTES_IN_PAGE),
+            end: end.align_up(BYTES_IN_PAGE),
+        };
         let chunk_start = start.align_down(BYTES_IN_CHUNK);
         let chunk_end = end.align_up(BYTES_IN_CHUNK);
         let chunk_size = chunk_end - chunk_start;
@@ -236,16 +240,15 @@ impl<VM: VMBinding> VMSpace<VM> {
             start, end, chunk_start, chunk_end
         );
 
-        if !self.pr.remove_external_pages(ExternalPages {
-            start: start.align_down(BYTES_IN_PAGE),
-            end: end.align_up(BYTES_IN_PAGE),
-        }) {
+        if !self.pr.remove_external_pages(extern_page) {
             warn!("Failed to remove external pages ({}, {}) at chunks ({}, {})", start, end, chunk_start, chunk_end);
             return;
         }
 
         // We've checked that the region exists in `remove_external_pages`
-        let index = self.ranges.iter().position(|&p| p.start == start && p.end == end).unwrap();
+        let index = self.ranges.iter()
+                        .position(|&p| p == extern_page)
+                        .expect(format!("External pages {:?} not found in ranges", extern_page).as_str());
         self.ranges.remove(index);
 
         // Mark VM space as unmapped. Note that we don't unmap the metadata since it may be used by other spaces,

@@ -22,7 +22,7 @@ pub struct ExternalPageResource<VM: VMBinding> {
     _p: PhantomData<VM>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ExternalPages {
     pub start: Address,
     pub end: Address,
