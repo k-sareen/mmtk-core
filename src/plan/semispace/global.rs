@@ -2,7 +2,7 @@ use super::gc_work::SSGCWorkContext;
 use crate::plan::global::CommonPlan;
 use crate::plan::global::CreateGeneralPlanArgs;
 use crate::plan::global::CreateSpecificPlanArgs;
-use crate::plan::semispace::mutator::{ALLOCATOR_MAPPING_DEFAULT, ALLOCATOR_MAPPING_ZYGOTE};
+use crate::plan::semispace::mutator::{ALLOCATOR_MAPPING_DEFAULT, ALLOCATOR_MAPPING_SINGLE_SPACE, ALLOCATOR_MAPPING_ZYGOTE};
 use crate::plan::AllocationSemantics;
 use crate::plan::Plan;
 use crate::plan::PlanConstraints;
@@ -103,6 +103,13 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
         if likely(!self.common().is_zygote()) {
+            #[cfg(feature = "ss_no_gc_in_harness")]
+            if unlikely(*self.options().ss_no_gc_in_harness) {
+                return &ALLOCATOR_MAPPING_SINGLE_SPACE;
+            } else {
+                return &ALLOCATOR_MAPPING_DEFAULT;
+            }
+            #[cfg(not(feature = "ss_no_gc_in_harness"))]
             &ALLOCATOR_MAPPING_DEFAULT
         } else {
             &ALLOCATOR_MAPPING_ZYGOTE
