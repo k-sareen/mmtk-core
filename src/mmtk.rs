@@ -470,6 +470,11 @@ impl<VM: VMBinding> MMTK<VM> {
             self.state.time_large_object_alloc_ns.swap(0, Ordering::SeqCst);
         }
         self.scheduler.enable_stat();
+        {
+            let mut harness_begin_time = self.state.harness_begin_time.borrow_mut();
+            assert!(harness_begin_time.is_none(), "Harness already started?");
+            *harness_begin_time = Some(std::time::Instant::now());
+        }
         probe!(mmtk, harness_begin);
     }
 

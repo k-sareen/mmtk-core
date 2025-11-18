@@ -61,6 +61,8 @@ pub struct GlobalState {
     pub(crate) malloc_bytes: AtomicUsize,
     /// Inside benchmark harness
     pub(crate) inside_harness: AtomicBool,
+    /// Harness begin time
+    pub(crate) harness_begin_time: AtomicRefCell<Option<Instant>>,
     /// Number of large object allocations
     #[cfg(feature = "measure_large_object_alloc")]
     pub(crate) num_large_object_alloc: AtomicUsize,
@@ -273,6 +275,7 @@ impl Default for GlobalState {
             #[cfg(feature = "malloc_counted_size")]
             malloc_bytes: AtomicUsize::new(0),
             inside_harness: AtomicBool::new(false),
+            harness_begin_time: AtomicRefCell::new(None),
             #[cfg(feature = "measure_large_object_alloc")]
             num_large_object_alloc: AtomicUsize::new(0),
             #[cfg(feature = "measure_large_object_alloc")]

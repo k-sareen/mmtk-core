@@ -3,6 +3,8 @@ use super::*;
 use crate::global_state::GcStatus;
 use crate::plan::ObjectsClosure;
 use crate::plan::VectorObjectQueue;
+#[cfg(feature = "gc_allocation_stats")]
+use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::rust_util::unlikely;
 use crate::util::*;
 use crate::vm::slot::Slot;
@@ -28,6 +30,42 @@ impl<VM: VMBinding> GCWork<VM> for ScheduleCollection {
         }
         // Set to GcPrepare
         mmtk.set_gc_status(GcStatus::GcPrepare);
+
+        #[cfg(feature = "gc_allocation_stats")]
+        if worker.mmtk.state.inside_harness.load(std::sync::atomic::Ordering::SeqCst) {
+            use crate::policy::space::Space;
+
+            let harness_begin_time = worker.mmtk.state.harness_begin_time.borrow();
+            let harness_elapsed = harness_begin_time.unwrap().elapsed();
+            let gc_count = mmtk.stats.gc_count.load(std::sync::atomic::Ordering::SeqCst) + 1;
+            let plan = mmtk.get_plan();
+            plan.for_each_space(&mut |space: &dyn Space<VM>| {
+                use crate::policy::zygotespace::ZygoteSpace;
+
+                let mut pages = 0;
+                if let Some(opt_zygote) = space.downcast_ref::<Option<ZygoteSpace<VM>>>() {
+                    if let Some(zygote) = opt_zygote {
+                        pages = zygote.reserved_pages();
+                    }
+                } else {
+                    pages = space.reserved_pages();
+                }
+
+                warn!(
+                    "PRE-GC:{},{},{},{}",
+                    harness_elapsed.as_millis(),
+                    gc_count,
+                    space.name(),
+                    pages * BYTES_IN_PAGE
+                )
+            });
+            warn!(
+                "PRE-GC:{},{},heap,{}",
+                harness_elapsed.as_millis(),
+                gc_count,
+                plan.get_reserved_pages() * BYTES_IN_PAGE,
+            );
+        }
 
         // Let the plan to schedule collection work
         mmtk.get_plan().schedule_collection(worker.scheduler());

@@ -42,7 +42,7 @@ impl SharedStats {
 /// The struct holds basic GC statistics, like the GC count,
 /// and an array of counters.
 pub struct Stats {
-    gc_count: AtomicUsize,
+    pub gc_count: AtomicUsize,
     total_time: Arc<Mutex<Timer>>,
     pub shared: Arc<SharedStats>,
     counters: Mutex<Vec<Arc<Mutex<dyn Counter + Send>>>>,
@@ -259,6 +259,7 @@ impl Stats {
             panic!("Calling Stats.start_all() while stats running");
         }
         self.shared.set_gathering_stats(true);
+        self.gc_count.store(0, Ordering::SeqCst);
 
         for c in &(*counters) {
             let mut ctr = c.lock().unwrap();

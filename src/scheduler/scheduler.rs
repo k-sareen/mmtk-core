@@ -13,6 +13,8 @@ use crate::policy::gc_work::TraceKind;
 use crate::policy::vmspace::ProcessVmSpaceObjects;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::scheduler::affinity::{BIG_CORE_AFFINITY, MID_CORE_AFFINITY};
+#[cfg(feature = "gc_allocation_stats")]
+use crate::util::constants::BYTES_IN_PAGE;
 use crate::util::opaque_pointer::*;
 use crate::util::options::AffinityKind;
 use crate::util::rust_util::array_from_fn;
@@ -588,6 +590,42 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
             mmtk.get_plan().get_total_pages(),
             elapsed.as_millis()
         );
+
+        #[cfg(feature = "gc_allocation_stats")]
+        if worker.mmtk.state.inside_harness.load(std::sync::atomic::Ordering::SeqCst) {
+            use crate::policy::space::Space;
+
+            let harness_begin_time = worker.mmtk.state.harness_begin_time.borrow();
+            let harness_elapsed = harness_begin_time.unwrap().elapsed();
+            let gc_count = mmtk.stats.gc_count.load(std::sync::atomic::Ordering::SeqCst);
+            let plan = mmtk.get_plan();
+            plan.for_each_space(&mut |space: &dyn Space<VM>| {
+                use crate::policy::zygotespace::ZygoteSpace;
+
+                let mut pages = 0;
+                if let Some(opt_zygote) = space.downcast_ref::<Option<ZygoteSpace<VM>>>() {
+                    if let Some(zygote) = opt_zygote {
+                        pages = zygote.reserved_pages();
+                    }
+                } else {
+                    pages = space.reserved_pages();
+                }
+
+                warn!(
+                    "POST-GC:{},{},{},{}",
+                    harness_elapsed.as_millis(),
+                    gc_count,
+                    space.name(),
+                    pages * BYTES_IN_PAGE
+                )
+            });
+            warn!(
+                "POST-GC:{},{},heap,{}",
+                harness_elapsed.as_millis(),
+                gc_count,
+                plan.get_reserved_pages() * BYTES_IN_PAGE,
+            );
+        }
 
         // USDT tracepoint for the end of GC.
         probe!(mmtk, gc_end);
