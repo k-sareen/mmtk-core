@@ -234,6 +234,15 @@ impl<VM: VMBinding> SemiSpace<VM> {
         // Add the chunk mark table to the list of global metadata
         plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
 
+        // Use contiguous space if explicitly requested or if we are simulating NoGC in the harness
+        let vmrequest = if cfg!(feature = "ss_fixed_size")
+            || (cfg!(feature = "ss_no_gc_in_harness") && unlikely(plan_args.global_args.options.is_ss_nogc_in_harness()))
+        {
+            VMRequest::fixed_size(_semi_space_size)
+        } else {
+            VMRequest::discontiguous()
+        };
+
         let res = SemiSpace {
             hi: AtomicBool::new(false),
             copyspace0: CopySpace::new(
@@ -241,11 +250,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
                     "copyspace0",
                     true,
                     false,
-                    if cfg!(feature = "ss_fixed_size") {
-                        VMRequest::fixed_size(_semi_space_size)
-                    } else {
-                        VMRequest::discontiguous()
-                    },
+                    vmrequest,
                 ),
                 false,
             ),
@@ -254,11 +259,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
                     "copyspace1",
                     true,
                     false,
-                    if cfg!(feature = "ss_fixed_size") {
-                        VMRequest::fixed_size(_semi_space_size)
-                    } else {
-                        VMRequest::discontiguous()
-                    },
+                    vmrequest,
                 ),
                 true,
             ),

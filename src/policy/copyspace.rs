@@ -582,11 +582,8 @@ impl<VM: VMBinding> CopySpace<VM> {
         trace!("Unprotect {:x} {:x}", start, start + extent);
     }
 
-    #[cfg(feature = "ss_fixed_size")]
     pub fn zero_until_end(&self) {
-        if !self.common().contiguous {
-            panic!("Can't zero until end for discontiguous CopySpace!");
-        }
+        assert!(self.common().contiguous, "Can't zero until end for discontiguous CopySpace!");
 
         let cursor = self.pr.cursor();
         let extent = self.common().extent;

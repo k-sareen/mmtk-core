@@ -431,9 +431,7 @@ impl<VM: VMBinding> MMTK<VM> {
         if self.options.is_ss_nogc_in_harness() {
             self.state.no_gc_in_harness.store(true, Ordering::SeqCst);
 
-            #[cfg(feature = "ss_fixed_size")]
             {
-                use crate::util::constants::LOG_BYTES_IN_PAGE;
                 self.get_plan()
                     .downcast_ref::<crate::plan::semispace::SemiSpace<VM>>()
                     .unwrap()

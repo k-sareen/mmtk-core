@@ -297,7 +297,6 @@ impl Options {
     }
 
     /// Are we a SemiSpace GC simulating NoGC in the harness?
-    #[cfg(feature = "ss_no_gc_in_harness")]
     pub fn is_ss_nogc_in_harness(&self) -> bool {
         *self.plan == PlanSelector::SemiSpace && *self.ss_no_gc_in_harness
     }
