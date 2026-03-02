@@ -237,6 +237,10 @@ impl<VM: VMBinding> MMTK<VM> {
         // each page in the heap has been touched at least once and hence the mutator should not
         // get page faults when allocating. This can drastically improve the performance of the
         // mutator
+        // XXX(kunals): For some reason, this causes unrecoverable mmap errors for 32-bit zygotes,
+        // so we only do this for 64-bit devices. The Pixel 6 Pro uses a 32-bit zygote as the
+        // secondary zygote.
+        #[cfg(target_pointer_width = "64")]
         if *options.plan == PlanSelector::NoGC
             || *options.plan == PlanSelector::SemiSpace
             || *options.plan == PlanSelector::Immix
