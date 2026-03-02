@@ -146,7 +146,8 @@ impl Stats {
             }
         }
         let mut power_stats = self.power_stats.lock().unwrap();
-        power_stats.init(vec!["s2mpg12-odpm", "s2mpg13-odpm"].as_slice());
+        power_stats.init(vec!["s2mpg10-odpm", "s2mpg11-odpm",              // Pixel 6 Pro
+                              "s2mpg12-odpm", "s2mpg13-odpm"].as_slice()); // Pixel 7 Pro
     }
 
     pub fn start_gc(&self) {
