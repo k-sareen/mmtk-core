@@ -431,18 +431,23 @@ impl<VM: VMBinding> MMTK<VM> {
         self.handle_user_collection_request(tls, true, true);
         self.state.is_harness_begin_gc.store(false, Ordering::SeqCst);
         self.state.inside_harness.store(true, Ordering::SeqCst);
-        #[cfg(feature = "ss_no_gc_in_harness")]
-        if self.options.is_ss_nogc_in_harness() {
-            self.state.no_gc_in_harness.store(true, Ordering::SeqCst);
+        // #[cfg(feature = "ss_no_gc_in_harness")]
+        // {
+        //     if self.options.is_ss_nogc_in_harness()
+        //         || (self.has_zygote_space() && *self.options.plan == PlanSelector::SemiSpace)
+        //     {
+        //         self.state.no_gc_in_harness.store(true, Ordering::SeqCst);
 
-            {
-                self.get_plan()
-                    .downcast_ref::<crate::plan::semispace::SemiSpace<VM>>()
-                    .unwrap()
-                    .tospace()
-                    .zero_until_end();
-            }
-        }
+        //         #[cfg(feature = "ss_fixed_size")]
+        //         {
+        //             self.get_plan()
+        //                 .downcast_ref::<crate::plan::semispace::SemiSpace<VM>>()
+        //                 .unwrap()
+        //                 .tospace()
+        //                 .zero_until_end();
+        //         }
+        //     }
+        // }
         // If we are an application process
         #[cfg(feature = "app_process_set_stress_factor")]
         if self.state.has_zygote_space() {
@@ -488,7 +493,7 @@ impl<VM: VMBinding> MMTK<VM> {
         self.stats.stop_all(self);
         self.state.inside_harness.store(false, Ordering::SeqCst);
         #[cfg(feature = "ss_no_gc_in_harness")]
-        if self.options.is_ss_nogc_in_harness() {
+        if self.options.is_ss_nogc_in_harness() || self.has_zygote_space() {
             self.state.no_gc_in_harness.store(false, Ordering::SeqCst);
         }
         #[cfg(feature = "measure_slowpath")]

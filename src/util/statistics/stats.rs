@@ -216,6 +216,13 @@ impl Stats {
             .as_str(),
         );
         output_string.push_str(
+            format!(
+                "{}\t",
+                mmtk.state.total_allocation_bytes.load(Ordering::Relaxed)
+            )
+            .as_str(),
+        );
+        output_string.push_str(
             "\n------------------------------ End MMTk Statistics -----------------------------\n",
         );
         // Print to logcat or stdout depending on if we are an application or headless process
@@ -251,6 +258,7 @@ impl Stats {
         }
         #[cfg(feature = "measure_large_object_alloc")]
         output_string.push_str("LOS.alloc\tLOS.alloc.time\t");
+        output_string.push_str("total_bytes_allocated\t");
         output_string.push('\n');
     }
 

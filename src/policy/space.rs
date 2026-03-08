@@ -124,6 +124,18 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
         // initialize_collection() has to be called so we know GC is initialized.
         let allow_gc = should_poll && self.common().global_state.is_initialized();
 
+        #[cfg(all(debug_assertions, feature = "ss_no_gc_in_harness", not(feature = "nogc_trace")))]
+        if self.common().global_state.harness_begin_time.borrow().is_some() {
+            debug_assert!(
+                !should_poll,
+                "Should not poll for GC when we are simulating NoGC in harness!",
+            );
+            debug_assert!(
+                self.common().global_state.no_gc_in_harness.load(std::sync::atomic::Ordering::SeqCst),
+                "no_gc_in_harness should be true when we are simulating NoGC in harness!",
+            );
+        }
+
         trace!("Reserving pages");
         let pr = self.get_page_resource();
         let pages_reserved = pr.reserve_pages(pages);
@@ -172,16 +184,7 @@ pub trait Space<VM: VMBinding>: 'static + SFT + Sync + Downcast {
                             atrace::begin_scoped_event(atrace::AtraceTag::Dalvik, "Zeroing Pages");
                         let plan = *(self.get_gc_trigger().options.plan);
                         if self.common().zeroed && plan != PlanSelector::NoGC {
-                            cfg_if::cfg_if! {
-                                if #[cfg(feature = "ss_no_gc_in_harness")] {
-                                    if likely(!self.common().global_state.no_gc_in_harness.load(std::sync::atomic::Ordering::SeqCst)) {
-                                        memory::zero(res.start, bytes);
-                                    }
-                                } else {
-                                    memory::zero(res.start, bytes);
-                                }
-                            }
-                            // memory::zero(res.start, bytes);
+                            memory::zero(res.start, bytes);
                         }
                     }
 

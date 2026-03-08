@@ -103,13 +103,6 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {
         if likely(!self.common().is_zygote()) {
-            #[cfg(feature = "ss_no_gc_in_harness")]
-            if unlikely(*self.options().ss_no_gc_in_harness) {
-                return &ALLOCATOR_MAPPING_SINGLE_SPACE;
-            } else {
-                return &ALLOCATOR_MAPPING_DEFAULT;
-            }
-            #[cfg(not(feature = "ss_no_gc_in_harness"))]
             &ALLOCATOR_MAPPING_DEFAULT
         } else {
             &ALLOCATOR_MAPPING_ZYGOTE
@@ -169,6 +162,20 @@ impl<VM: VMBinding> Plan for SemiSpace<VM> {
         // release the collected region
         if likely(!self.common().is_zygote()) {
             self.fromspace_mut().release();
+        }
+    }
+
+    fn end_of_gc(&self, _tls: VMWorkerThread) {
+        #[cfg(feature = "ss_no_gc_in_harness")]
+        {
+            use crate::util::options::PlanSelector;
+
+            if unlikely(self.base().global_state.is_harness_begin_gc.load(Ordering::SeqCst))
+                && (self.base().options.is_ss_nogc_in_harness()
+                    || (self.common.has_zygote_space() && *self.base().options.plan == PlanSelector::SemiSpace))
+            {
+                self.base().global_state.no_gc_in_harness.store(true, Ordering::SeqCst);
+            }
         }
     }
 
@@ -235,9 +242,7 @@ impl<VM: VMBinding> SemiSpace<VM> {
         plan_args.global_side_metadata_specs.push(crate::util::heap::chunk_map::ChunkMap::ALLOC_TABLE);
 
         // Use contiguous space if explicitly requested or if we are simulating NoGC in the harness
-        let vmrequest = if cfg!(feature = "ss_fixed_size")
-            || (cfg!(feature = "ss_no_gc_in_harness") && unlikely(plan_args.global_args.options.is_ss_nogc_in_harness()))
-        {
+        let vmrequest = if cfg!(feature = "ss_fixed_size") {
             VMRequest::fixed_size(_semi_space_size)
         } else {
             VMRequest::discontiguous()

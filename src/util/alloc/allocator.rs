@@ -324,6 +324,20 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                             .analysis_manager
                             .alloc_hook(size, align, offset);
                     }
+                } else if self.get_context().state.is_initialized() && !previous_result_zero {
+                    // Even if we are not doing stress test, we still need to update the total allocation bytes
+                    let allocated_size = if !self.does_thread_local_allocation() {
+                        size
+                    } else {
+                        crate::util::conversions::raw_align_up(
+                            size,
+                            self.get_thread_local_buffer_granularity(),
+                        )
+                    };
+                    self.get_context()
+                        .state
+                        .total_allocation_bytes
+                        .fetch_add(allocated_size, Ordering::SeqCst);
                 }
 
                 return result;

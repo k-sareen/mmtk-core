@@ -55,25 +55,18 @@ pub fn ss_mutator_release<VM: VMBinding>(mutator: &mut Mutator<VM>, _tls: VMWork
         // Use the default allocator mapping after the first Zygote fork
         if *(mutator.config.allocator_mapping) == *ALLOCATOR_MAPPING_ZYGOTE {
             mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_DEFAULT;
-            #[cfg(feature = "ss_no_gc_in_harness")]
-            {
-                // If we are simulating NoGC, we should use the single space allocator mapping
-                if unlikely(*plan.options().ss_no_gc_in_harness) {
-                    mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_SINGLE_SPACE;
-                }
-            }
         }
 
-        #[cfg(all(debug_assertions, feature = "ss_no_gc_in_harness"))]
-        if unlikely(*plan.options().ss_no_gc_in_harness) {
-            // If we are simulating NoGC, we should use the single space allocator mapping
-            // mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_SINGLE_SPACE;
-            assert_eq!(
-                *mutator.config.allocator_mapping,
-                *ALLOCATOR_MAPPING_SINGLE_SPACE,
-                "Allocator mapping should be ALLOCATOR_MAPPING_SINGLE_SPACE if we're simulating NoGC"
-            );
-        }
+        // #[cfg(all(debug_assertions, feature = "ss_no_gc_in_harness"))]
+        // if unlikely(*plan.options().ss_no_gc_in_harness) {
+        //     // If we are simulating NoGC, we should use the single space allocator mapping
+        //     // mutator.config.allocator_mapping = &ALLOCATOR_MAPPING_SINGLE_SPACE;
+        //     assert_eq!(
+        //         *mutator.config.allocator_mapping,
+        //         *ALLOCATOR_MAPPING_SINGLE_SPACE,
+        //         "Allocator mapping should be ALLOCATOR_MAPPING_SINGLE_SPACE if we're simulating NoGC"
+        //     );
+        // }
 
         // rebind the allocation bump pointer to the appropriate semispace
         let bump_allocator = unsafe {
@@ -138,16 +131,7 @@ pub fn create_ss_mutator<VM: VMBinding>(
     let ss = mmtk.get_plan().downcast_ref::<SemiSpace<VM>>().unwrap();
     let zygote = ss.common().is_zygote();
     let mapping: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if likely(!zygote) {
-        let m: &'static EnumMap<AllocationSemantics, AllocatorSelector>;
-        m = &ALLOCATOR_MAPPING_DEFAULT;
-        // If we are simulating NoGC, then we should put everything into the same space
-        #[cfg(feature = "ss_no_gc_in_harness")]
-        let m: &'static EnumMap<AllocationSemantics, AllocatorSelector> = if unlikely(*ss.options().ss_no_gc_in_harness) {
-            &ALLOCATOR_MAPPING_SINGLE_SPACE
-        } else {
-            m
-        };
-        m
+        &ALLOCATOR_MAPPING_DEFAULT
     } else {
         &ALLOCATOR_MAPPING_ZYGOTE
     };

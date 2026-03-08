@@ -27,20 +27,29 @@ rust_library {
     features: [
         "default",
         "vm_space",
-        "nogc_trace",                       // Perform tracing in NoGC to benchmark tracing performance
+        // "nogc_trace",                       // Perform tracing in NoGC to benchmark tracing performance
+        // "madvise_free",
         "perf_counter",
         // "eager_zeroing",
         "single_worker",                    // Single-threaded build
         "eager_sweeping",
         // "edge_enqueuing",                // Multi-threaded build
         "object_pinning",
-        // "semispace_fixed_size",
         "builtin_env_logger",               // This is technically only used by the x86_64 headless build
         // Used for benchmarking effects of GC performance; also set ART_USE_MMTK_STRESS_MULTIPLE_GC to 1 in mmtk_upcalls.cc
         // "stress_multiple_gc",
+        // "stress_gc_in_harness",             // Only do stress GC inside harness
+        // "ss_no_gc_in_harness",              // Simulate NoGC using SemiSpace when inside the harness
+        // "ss_no_gc_fixed_cost",              // Used to benchmark fixed cost of GC
+        // "ss_do_trace_before_gc",            // Used to benchmark tracing cost of GC in SemiSpace
+        // "ss_fixed_size",
+        // "immix_non_moving",
+        // "gc_allocation_stats",
         "set_unlog_bits_vm_space",
+        // Unsafely set the stress factor for app processes inside harness if we are running an application
+        "app_process_set_stress_factor",
         // "atrace_heap_size_breakdown",
-        // "dont_enqueue_vm_space_objects",
+        "dont_enqueue_vm_space_objects",
         // "sanity",                        // debug only; also set ART_USE_MMTK_SANITY to 1 in mmtk_upcalls.cc and third_party_heap.cc
         // XXX(kunals): There's an extremely subtle pitfall with "poison_on_release" + "single_worker" wherein
         // we try to poison memory for a large object but its class has already been moved (or is dead itself)
@@ -52,22 +61,27 @@ rust_library {
         // "extreme_assertions",            // debug only
     ],
     // "debug" build
-    flags: [
-        "-C opt-level=0",
-        "-C debuginfo=2",
-        "-C strip=none",
-        "-C debug-assertions=true",
-        "-C overflow-checks=true",
-        "-C codegen-units=256",
-    ],
+    // flags: [
+    //     "-C opt-level=0",
+    //     "-C debuginfo=2",
+    //     "-C strip=none",
+    //     "-C debug-assertions=true",
+    //     "-C overflow-checks=true",
+    //     // "-C codegen-units=256",
+    // ],
     // "release" build
     // flags: [
+    //     // "-C profile-use=/home/kunals/git/android-lbo/mmtk-art/merged.profdata",
+    //     // "-C profile-generate=/sdcard/misc/trace", // The profile files are saved at /sdcard/misc/trace/default_%m.profraw
     //     "-C opt-level=3",
-    //     "-C debuginfo=0",
-    //     "-C strip=symbols",
-    //     "-C debug-assertions=false",
-    //     "-C overflow-checks=false",
-    //     "-C codegen-units=16",
+    //     // "-C debuginfo=0",
+    //     "-C debuginfo=2",
+    //     // "-C strip=symbols",
+    //     // "-C debug-assertions=false",
+    //     // "-C overflow-checks=false",
+    //     "-C debug-assertions=true",
+    //     "-C overflow-checks=true",
+    //     // "-C codegen-units=16",
     // ],
     rustlibs: [
         "libatomic_rust",

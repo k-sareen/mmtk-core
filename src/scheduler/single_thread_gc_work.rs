@@ -232,7 +232,7 @@ where
         worker.get_copy_context_mut().release();
 
         // Set GC status
-        // mmtk.set_gc_status(GcStatus::NotInGC);
+        mmtk.set_gc_status(GcStatus::NotInGC);
         probe!(mmtk, release_end);
     }
 }

@@ -44,6 +44,8 @@ pub struct GlobalState {
     pub(crate) stacks_prepared: AtomicBool,
     /// A counter that keeps tracks of the number of bytes allocated since last stress test
     pub(crate) allocation_bytes: AtomicUsize,
+    /// A counter that keeps tracks of the total number of bytes allocated
+    pub(crate) total_allocation_bytes: AtomicUsize,
     /// Is the current runtime the Zygote process?
     pub(crate) is_zygote_process: AtomicBool,
     /// Does the current runtime have a Zygote space?
@@ -199,6 +201,7 @@ impl GlobalState {
             size,
             self.allocation_bytes.load(Ordering::Relaxed),
         );
+        self.total_allocation_bytes.fetch_add(size, Ordering::SeqCst);
         old_allocation_bytes + size
     }
 
@@ -266,6 +269,7 @@ impl Default for GlobalState {
             cur_collection_attempts: AtomicUsize::new(0),
             scanned_stacks: AtomicUsize::new(0),
             allocation_bytes: AtomicUsize::new(0),
+            total_allocation_bytes: AtomicUsize::new(0),
             is_zygote_process: AtomicBool::new(false),
             has_zygote_space: AtomicBool::new(false),
             is_pre_first_zygote_fork_gc: AtomicBool::new(false),
