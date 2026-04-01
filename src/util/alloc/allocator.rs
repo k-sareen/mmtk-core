@@ -6,6 +6,7 @@ use crate::util::heap::gc_trigger::GCTrigger;
 use crate::util::options::Options;
 use crate::MMTK;
 
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -153,6 +154,7 @@ fn atrace_space_size(space_name: &str, space_size: usize) {
 pub struct AllocatorContext<VM: VMBinding> {
     pub state: Arc<GlobalState>,
     pub options: Arc<Options>,
+    pub thrown_oom: AtomicBool,
     pub gc_trigger: Arc<GCTrigger<VM>>,
     #[cfg(feature = "analysis")]
     pub analysis_manager: Arc<AnalysisManager<VM>>,
@@ -163,6 +165,7 @@ impl<VM: VMBinding> AllocatorContext<VM> {
         Self {
             state: mmtk.state.clone(),
             options: mmtk.options.clone(),
+            thrown_oom: AtomicBool::new(false),
             gc_trigger: mmtk.gc_trigger.clone(),
             #[cfg(feature = "analysis")]
             analysis_manager: mmtk.analysis_manager.clone(),
@@ -276,6 +279,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
             }
 
             if !result.is_zero() {
+                self.get_context().thrown_oom.store(false, Ordering::SeqCst);
                 // Report allocation success to assist OutOfMemory handling.
                 if !self
                     .get_context()
@@ -343,6 +347,14 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                 return result;
             }
 
+            // If we have already thrown an OOM for this allocation then return a zero
+            if self.get_context().thrown_oom.load(Ordering::SeqCst) {
+                // Need to reset the thrown_oom state since we're giving up on this allocation,
+                // that is to say, the thrown_oom state is *per* allocation request
+                self.get_context().thrown_oom.store(false, Ordering::SeqCst);
+                return Address::ZERO;
+            }
+
             // It is possible to have cases where a thread is blocked for another GC (non emergency)
             // immediately after being blocked for a GC (emergency) (e.g. in stress test), that is saying
             // the thread does not leave this loop between the two GCs. The local var 'emergency_collection'
@@ -364,6 +376,7 @@ pub trait Allocator<VM: VMBinding>: Downcast {
                     // Note that we throw a `HeapOutOfMemory` error here and return a null ptr back to the VM
                     trace!("Throw HeapOutOfMemory!");
                     VM::VMCollection::out_of_memory(tls, AllocationError::HeapOutOfMemory);
+                    self.get_context().thrown_oom.store(true, Ordering::SeqCst);
                     self.get_context()
                         .state
                         .allocation_success

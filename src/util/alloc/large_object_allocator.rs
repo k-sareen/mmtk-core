@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::policy::largeobjectspace::LargeObjectSpace;
 use crate::policy::space::Space;
 use crate::util::alloc::{allocator, Allocator};
+use crate::util::constants::LOG_BYTES_IN_PAGE;
 use crate::util::opaque_pointer::*;
 use crate::util::Address;
 use crate::vm::VMBinding;
@@ -53,12 +54,12 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
     fn alloc_slow_once(&mut self, size: usize, align: usize, _offset: usize) -> Address {
         #[cfg(feature = "measure_large_object_alloc")]
         let start_time = std::time::Instant::now();
-        if self.space.will_oom_on_acquire(self.tls, size) {
-            return Address::ZERO;
-        }
-
         let maxbytes = allocator::get_maximum_aligned_size::<VM>(size, align);
         let pages = crate::util::conversions::bytes_to_pages_up(maxbytes);
+        if self.space.will_oom_on_acquire(self.tls, pages << LOG_BYTES_IN_PAGE) {
+            self.get_context().thrown_oom.store(true, std::sync::atomic::Ordering::SeqCst);
+            return Address::ZERO;
+        }
         #[cfg(feature = "measure_large_object_alloc")]
         {
             let rtn = self.space.allocate_pages(self.tls, pages);
