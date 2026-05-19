@@ -53,7 +53,11 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
     fn alloc_slow_once(&mut self, size: usize, align: usize, _offset: usize) -> Address {
         #[cfg(feature = "measure_large_object_alloc")]
         let start_time = std::time::Instant::now();
-        if self.space.will_oom_on_acquire(self.tls, size) {
+        if self.space.handle_obvious_oom_request(
+            self.tls,
+            size,
+            self.get_context().get_alloc_options(),
+        ) {
             return Address::ZERO;
         }
 
@@ -61,7 +65,7 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
         let pages = crate::util::conversions::bytes_to_pages_up(maxbytes);
         #[cfg(feature = "measure_large_object_alloc")]
         {
-            let rtn = self.space.allocate_pages(self.tls, pages);
+            let rtn = self.space.allocate_pages(self.tls, pages, self.get_context().get_alloc_options());
             let end_time = std::time::Instant::now();
             if !rtn.is_zero() {
                 let alloc_time = end_time.duration_since(start_time).as_nanos() as u64;
@@ -69,7 +73,8 @@ impl<VM: VMBinding> Allocator<VM> for LargeObjectAllocator<VM> {
             }
             return rtn;
         }
-        self.space.allocate_pages(self.tls, pages)
+        self.space
+            .allocate_pages(self.tls, pages, self.get_context().get_alloc_options())
     }
 }
 
