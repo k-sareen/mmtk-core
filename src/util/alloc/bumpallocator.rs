@@ -195,7 +195,6 @@ impl<VM: VMBinding> BumpAllocator<VM> {
         stress_test: bool,
     ) -> Address {
         if self.space.will_oom_on_acquire(self.tls, size) {
-            self.get_context().thrown_oom.store(true, std::sync::atomic::Ordering::SeqCst);
             return Address::ZERO;
         }
 
