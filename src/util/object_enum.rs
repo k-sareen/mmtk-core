@@ -5,10 +5,7 @@ use std::marker::PhantomData;
 use crate::vm::VMBinding;
 
 use super::{
-    heap::{
-        chunk_map::{ChunkMap, ChunkState},
-        MonotonePageResource,
-    },
+    heap::{chunk_map::ChunkMap, MonotonePageResource},
     linear_scan::Region,
     metadata::{side_metadata::spec_defs::VO_BIT, vo_bit},
     Address, ObjectReference,

@@ -18,7 +18,6 @@ use crate::scheduler::GCWorkScheduler;
 use crate::scheduler::GCWorker;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
-use crate::util::heap::chunk_map::IMMIX_CHUNK_MASK;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::Address;
@@ -307,7 +306,6 @@ impl<VM: VMBinding> GenImmix<VM> {
                 mixed_age: false,
                 never_move_objects: false,
             },
-            IMMIX_CHUNK_MASK,
         );
 
         let genimmix = GenImmix {

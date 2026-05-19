@@ -178,17 +178,19 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
                 unlog_object_when_traced: true,
                 #[cfg(feature = "vo_bit")]
                 mixed_age: false,
+                never_move_objects: false,
             }
         } else {
             ImmixSpaceArgs {
                 unlog_object_when_traced: false,
                 #[cfg(feature = "vo_bit")]
                 mixed_age: false,
+                never_move_objects: false,
             }
         };
 
         // XXX(kunals): We set the defrag headroom percent to 50% for the Zygote
-        let mut immix_space = ImmixSpace::new(args, immix_space_args, ZYGOTE_CHUNK_MASK);
+        let mut immix_space = ImmixSpace::new(args, immix_space_args);
         immix_space.set_defrag_headroom_percent(50);
 
         ZygoteSpace {
@@ -244,6 +246,8 @@ impl<VM: VMBinding> ZygoteSpace<VM> {
             self.immix_space.release(worker, major_gc);
             if is_pre_first_zygote_fork_gc {
                 self.created_zygote_space = true;
+                // We will never move the objects in the zygote space after the first fork
+                self.immix_space.space_args.never_move_objects = true;
             }
         }
     }

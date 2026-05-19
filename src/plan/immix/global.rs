@@ -13,7 +13,6 @@ use crate::policy::space::Space;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
-use crate::util::heap::chunk_map::IMMIX_CHUNK_MASK;
 use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::metadata::side_metadata::SideMetadataContext;
@@ -206,7 +205,6 @@ impl<VM: VMBinding> Immix<VM> {
             immix_space: ImmixSpace::new(
                 plan_args.get_space_args("immix", true, false, VMRequest::discontiguous()),
                 space_args,
-                IMMIX_CHUNK_MASK,
             ),
             common: CommonPlan::new(plan_args),
             last_gc_was_defrag: AtomicBool::new(false),

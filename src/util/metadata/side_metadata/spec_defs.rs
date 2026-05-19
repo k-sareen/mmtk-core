@@ -56,12 +56,12 @@ define_side_metadata_specs!(
     last_spec_as LAST_GLOBAL_SIDE_METADATA_SPEC,
     // Mark the start of an object
     VO_BIT = (global: true, log_num_of_bits: 0, log_bytes_in_region: LOG_MIN_OBJECT_SIZE as usize),
-    // Mark chunks (any plan that uses the chunk map should include this spec in their global sidemetadata specs)
-    CHUNK_MARK   = (global: true, log_num_of_bits: 3, log_bytes_in_region: crate::util::heap::chunk_map::Chunk::LOG_BYTES),
     // Track chunks used by (malloc) marksweep
     MS_ACTIVE_CHUNK = (global: true, log_num_of_bits: 3, log_bytes_in_region: LOG_BYTES_IN_CHUNK),
     // Track the index in SFT map for a chunk (only used for SFT sparse chunk map)
-    SFT_DENSE_CHUNK_MAP_INDEX = (global: true, log_num_of_bits: 3, log_bytes_in_region: LOG_BYTES_IN_CHUNK),
+    SFT_DENSE_CHUNK_MAP_INDEX   = (global: true, log_num_of_bits: 3, log_bytes_in_region: LOG_BYTES_IN_CHUNK),
+    // Mark chunks (any plan that uses the chunk map should include this spec in their global sidemetadata specs)
+    CHUNK_MARK   = (global: true, log_num_of_bits: 3, log_bytes_in_region: crate::util::heap::chunk_map::Chunk::LOG_BYTES),
 );
 
 // This defines all LOCAL side metadata used by mmtk-core.
