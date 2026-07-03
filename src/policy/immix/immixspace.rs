@@ -13,15 +13,15 @@ use crate::util::heap::chunk_map::*;
 use crate::util::heap::BlockPageResource;
 use crate::util::heap::PageResource;
 use crate::util::linear_scan::{Region, RegionIterator};
-use crate::util::metadata::side_metadata::SideMetadataSpec;
 use crate::util::metadata::mark_bit::MarkState;
+use crate::util::metadata::side_metadata::SideMetadataSpec;
 #[cfg(feature = "vo_bit")]
 use crate::util::metadata::vo_bit;
 use crate::util::metadata::{self, MetadataSpec};
 use crate::util::object_enum::ObjectEnumerator;
 use crate::util::object_forwarding;
-use crate::util::{copy::*, epilogue, object_enum};
 use crate::util::rust_util::unlikely;
+use crate::util::{copy::*, epilogue, object_enum};
 use crate::util::{Address, ObjectReference};
 use crate::vm::*;
 use crate::{
@@ -146,7 +146,8 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
     }
     fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         // We may have to set mark bit to 1 in case the marked state is 0
-        self.mark_state.on_object_metadata_initialization::<VM>(object);
+        self.mark_state
+            .on_object_metadata_initialization::<VM>(object);
         #[cfg(feature = "vo_bit")]
         crate::util::metadata::vo_bit::set_vo_bit(object);
     }
@@ -364,7 +365,8 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     }
 
     pub fn set_defrag_headroom_percent(&mut self, defrag_headroom_percent: usize) {
-        self.defrag.set_defrag_headroom_percent(defrag_headroom_percent)
+        self.defrag
+            .set_defrag_headroom_percent(defrag_headroom_percent)
     }
 
     /// Check if current GC is a defrag GC.
@@ -465,7 +467,8 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                     let work_packets = self
                         .chunk_map
                         .generate_tasks(|chunk| Box::new(ClearVOBitsAfterPrepare { chunk, scope }));
-                    self.scheduler.work_buckets[WorkBucketStage::ClearVOBits].bulk_add(work_packets);
+                    self.scheduler.work_buckets[WorkBucketStage::ClearVOBits]
+                        .bulk_add(work_packets);
                 }
             } else {
                 for chunk in self.chunk_map.all_chunks() {
@@ -691,8 +694,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             // until the object has been forwarded by the winner. Note that the object may not
             // necessarily get forwarded since Immix opportunistically moves objects.
             #[allow(clippy::let_and_return)]
-            let new_object =
-                object_forwarding::spin_and_get_forwarded_object::<VM>(object);
+            let new_object = object_forwarding::spin_and_get_forwarded_object::<VM>(object);
             #[cfg(debug_assertions)]
             {
                 if new_object == object {
@@ -885,7 +887,9 @@ impl<VM: VMBinding> PrepareBlockState<VM> {
     /// Clear object mark table
     fn reset_object_mark(&self) {
         // We reset the mark bits if they are on the side
-        self.space.mark_state.on_block_reset::<VM>(self.chunk.start(), Chunk::BYTES);
+        self.space
+            .mark_state
+            .on_block_reset::<VM>(self.chunk.start(), Chunk::BYTES);
     }
 }
 
@@ -907,6 +911,9 @@ impl<VM: VMBinding> GCWork<VM> for PrepareBlockState<VM> {
             } else if unlikely(mmtk.is_pre_first_zygote_fork_gc()) {
                 // We defrag all blocks for the pre-first Zygote fork GC to
                 // compact the Zygote space as much as possible
+                // TODO(kunals): This is actually incorrect. We should only set
+                // blocks as defrag sources if they do not have any pinned
+                // objects allocated in it. See L619 in this file.
                 true
             } else if super::DEFRAG_EVERY_BLOCK {
                 // Set every block as defrag source if so desired.
@@ -1069,8 +1076,7 @@ impl<VM: VMBinding> ImmixCopyContext<VM> {
     }
 
     pub fn rebind(&mut self, space: &ImmixSpace<VM>) {
-        self.allocator
-            .rebind(unsafe { &*{ space as *const _ } });
+        self.allocator.rebind(unsafe { &*{ space as *const _ } });
     }
 }
 
